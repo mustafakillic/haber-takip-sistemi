@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block subtitle %}Kritik Bilgi İhtiyacı (KBİ) — bölge ve komşu ülkelerdeki gelişmelerin sabit sorgulu izlemesi.{% endblock %}
+{% block content %}
+
+  <div class="module-grid">
+    {% for m in modules %}
+      <div class="module">
+        <div class="module-head">
+          <div class="title">
+            <span>{{ m.title }}</span>
+            <span class="n">{{ m.news|length }}</span>
+          </div>
+          <div class="desc">{{ m.desc }}</div>
+        </div>
+        <div class="module-body">
+          {% if m.error %}
+            <div class="module-error">{{ m.error }}</div>
+          {% elif m.news %}
+            {% for item in m.news %}
+              <div class="mrow">
+                <a href="{{ item.link }}" target="_blank" rel="noopener">{{ item.title }}</a>
+                <div class="meta">
+                  <span class="source">{{ item.source }}</span>
+                  <span>{{ item.published }}</span>
+                  <button
+                    class="msum-btn"
+                    data-url="{{ item.link }}"
+                    data-title="{{ item.title }}"
+                    data-source="{{ item.source }}"
+                    data-time="{{ item.published }}"
+                    onclick="openSummaryFromBtn(this)"
+                  >Özet</button>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="module-empty">Kayıt bulunamadı.</div>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+{% endblock %}

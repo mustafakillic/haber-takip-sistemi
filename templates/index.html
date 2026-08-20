@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block subtitle %}Belirlenen anahtar kelimelerle {{ city }} iline ait yerel ve ulusal basın taraması.{% endblock %}
+{% block content %}
+
+  <div class="panel">
+    <div class="panel-label">Tarama Parametresi</div>
+    <form method="get" action="/">
+      <input type="text" name="keyword" placeholder='Anahtar kelime girin (örn. "nükleer", "sınır", "tatbikat")' value="{{ keyword }}" autofocus>
+      <input type="hidden" name="searched" value="1">
+      <button type="submit">Tara</button>
+    </form>
+    <div class="quick">
+      {% for kw in quick_keywords %}
+        <a href="/?keyword={{ kw|urlencode }}&searched=1">#{{ kw }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if searched %}
+    <div class="results-header">
+      <span>Sorgu: "{{ keyword if keyword else city }}"</span>
+      <span><span class="count">{{ results|length }}</span> kayıt bulundu</span>
+    </div>
+
+    {% if results %}
+      {% for item in results %}
+        <div class="row">
+          <div class="idx">{{ "%02d"|format(loop.index) }}</div>
+          <div>
+            <a class="title" href="{{ item.link }}" target="_blank" rel="noopener">{{ item.title }}</a>
+            <div class="meta">
+              <span class="source">{{ item.source }}</span>
+              <span class="time">{{ item.published }}</span>
+              <a class="link" href="{{ item.link }}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">KAYNAĞA GİT</a>
+              <button
+                class="summarize-btn"
+                data-url="{{ item.link }}"
+                data-title="{{ item.title }}"
+                data-source="{{ item.source }}"
+                data-time="{{ item.published }}"
+                onclick="openSummaryFromBtn(this)"
+              >ÖZETLE</button>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">Sorguyla eşleşen kayıt bulunamadı.</div>
+    {% endif %}
+  {% endif %}
+
+{% endblock %}

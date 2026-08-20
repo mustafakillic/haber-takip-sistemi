@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: kars-haber-takip
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --timeout 60
+    envVars:
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: PYTHON_VERSION
+        value: 3.11.9
