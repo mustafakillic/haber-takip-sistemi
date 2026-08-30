@@ -3,7 +3,3 @@ __pycache__/
 *.pyc
 .idea/
 .DS_Store
-
-# stray npm stub from tooling
-package-lock.json
-node_modules/

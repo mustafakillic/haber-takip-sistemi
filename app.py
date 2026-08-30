@@ -1,4 +1,3 @@
-import io
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -10,9 +9,7 @@ import feedparser
 import requests
 import trafilatura
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, render_template, request, send_file
-
-import report as report_mod
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
@@ -61,30 +58,6 @@ KBI_CATEGORIES = [
         "title": "Gürcistan",
         "desc": "Gürcistan kaynaklı bölgesel/sınır gelişmeleri",
         "query": 'Gürcistan (Kars OR Türkiye OR sınır OR hudut)',
-        "hours": None,
-        "limit": 8,
-    },
-    {
-        "key": "pkk_teror",
-        "title": "PKK / Terörle Mücadele",
-        "desc": "Bölge ve hudut hattında terör örgütü faaliyeti, operasyon ve güvenlik gelişmeleri",
-        "query": '(PKK OR terör OR "terörle mücadele" OR operasyon) (Kars OR hudut OR sınır OR "Doğu Anadolu" OR Ardahan OR Iğdır)',
-        "hours": None,
-        "limit": 8,
-    },
-    {
-        "key": "deprem_afad",
-        "title": "Deprem / AFAD / Afet",
-        "desc": "Bölgede deprem, doğal afet, AFAD duyuru ve müdahaleleri",
-        "query": '(deprem OR AFAD OR sel OR heyelan OR "doğal afet" OR çığ) (Kars OR Ardahan OR Iğdır OR "Doğu Anadolu")',
-        "hours": None,
-        "limit": 8,
-    },
-    {
-        "key": "tatbikat",
-        "title": "Askeri Tatbikat / Hareketlilik",
-        "desc": "Bölgesel askeri tatbikat, konuşlanma ve hareketlilik haberleri",
-        "query": '(tatbikat OR "askeri tatbikat" OR "kuvvet kaydırma" OR konuşlanma OR "sınır ötesi") (Kars OR Türkiye OR Ermenistan OR Azerbaycan OR Gürcistan OR hudut)',
         "hours": None,
         "limit": 8,
     },
@@ -201,68 +174,9 @@ def _truncate_at_next_section(text: str) -> str:
     return text
 
 
-# Haber sitelerinde asıl metnin ardına eklenen "ilgili haberler / son dakika"
-# widget'larının başladığı yeri yakalayan işaretler.
-_WIDGET_MARKERS = [
-    re.compile(r"\n\s*(?:Bugün|Dün|Bu gün)[,;]?\s*\d{1,2}[:.]\d{2}", re.IGNORECASE),
-    re.compile(r"\n\s*\d{1,2}\s*(?:saat|dakika|gün)\s+önce", re.IGNORECASE),
-    re.compile(r"\n\s*[-–—]\s*\n\s*[-–—]\s*\n"),  # arka arkaya ayraç satırları
-    re.compile(r"\n\s*(?:İlgili Haberler|İLGİLİ HABERLER|Son Dakika Haberleri|Öne Çıkan Haberler|Daha Fazla)\s*\n"),
-    # sosyal paylaşım / künye kırıntıları (satır içi de olabilir)
-    re.compile(r"\s*•?\s*\d{1,2}\s+\w+\s+20\d{2}\s+Haberi?\s+Paylaş"),
-    re.compile(r"\s*(?:Haberi Paylaş|Bu haberi paylaş|Yorumlar\b|Yorum Yap\b)"),
-    re.compile(r"\s*•\s*\d{1,2}\s+\w+\s+20\d{2}\b"),
-]
-
-# Yazar/tarih künyesi satırları ("29 Ağustos 2026•Güncelleme: ...", "Editör: ...")
-_META_LINE_RE = re.compile(
-    r"^\s*(?:\d{1,2}\s+\w+\s+20\d{2}|Güncelleme\s*:|Editör\s*:|Yayınlanma\s*:|Giriş\s*:|Abone ol)\b.*$",
-    re.IGNORECASE,
-)
-
-_DATELINE_RE = re.compile(r"^\s*\([A-ZÇĞİÖŞÜ][A-ZÇĞİÖŞÜ\s./-]{1,30}\)\s*[-–—]\s*")
-_BYLINE_RE = re.compile(r"^\s*(?:Haber\s*:|Haberi?\s+yapan\s*:|Foto(?:ğraf)?\s*:|Kaynak\s*:)\s*.*$", re.IGNORECASE)
-
-
-def _strip_article_noise(text: str) -> str:
-    """Byline / dateline ve makale sonuna eklenen ilgili-haber widget'larını atar."""
-    if not text:
-        return text
-
-    cut = len(text)
-    for rx in _WIDGET_MARKERS:
-        m = rx.search(text)
-        if m and m.start() < cut:
-            cut = m.start()
-    text = text[:cut].strip()
-
-    lines = [ln for ln in text.split("\n") if not _META_LINE_RE.match(ln.strip())]
-    # baştaki byline / dateline satırlarını temizle
-    while lines:
-        first = lines[0].strip()
-        if not first or _BYLINE_RE.match(first):
-            lines.pop(0)
-            continue
-        stripped = _DATELINE_RE.sub("", lines[0])
-        if stripped != lines[0]:
-            lines[0] = stripped
-        break
-    # sondaki clickbait promo kırıntılarını / byline'ları at
-    while lines and (
-        lines[-1].strip().endswith("...")
-        or lines[-1].strip() in {"-", "–", "—", ""}
-        or _BYLINE_RE.match(lines[-1].strip())
-        or (len(lines[-1].strip()) <= 5 and lines[-1].strip().isupper())  # ajans rumuzu: "AA", "İHA"
-    ):
-        lines.pop()
-
-    return "\n".join(lines).strip()
-
-
 def extract_article_text(html: str) -> str:
-    text = trafilatura.extract(html, favor_precision=True, include_comments=False) or ""
+    text = trafilatura.extract(html, favor_recall=True) or ""
     text = _truncate_at_next_section(text)
-    text = _strip_article_noise(text)
 
     if len(text) < 150:
         soup = BeautifulSoup(html, "html.parser")
@@ -310,111 +224,9 @@ def summarize_text(text: str, title: str = "", max_sentences: int = 3) -> str:
         title_overlap = sum(1 for w in sent_words if w in title_words)
         scored.append((base_score + title_overlap * 0.8, i, sent))
 
-    ranked = sorted(scored, key=lambda x: x[0], reverse=True)
-    chosen, seen = [], []
-    for _, idx, sent in ranked:
-        toks = set(re.findall(r"[a-zA-ZçÇğĞıİöÖşŞüÜ]+", sent.lower()))
-        if any(toks and len(toks & p) / len(toks) > 0.8 for p in seen):
-            continue  # neredeyse aynı cümleyi tekrar ekleme
-        seen.append(toks)
-        chosen.append((idx, sent))
-        if len(chosen) >= max_sentences:
-            break
-    chosen.sort(key=lambda x: x[0])
-    return " ".join(s for _, s in chosen)
-
-
-# --- 5N1K (Kim / Ne / Nerede / Ne zaman / Neden / Nasıl) otomatik çıkarım ---
-
-PLACE_HINTS = [
-    "Kars", "Ardahan", "Iğdır", "Sarıkamış", "Selim", "Kağızman", "Digor", "Susuz",
-    "Akyaka", "Arpaçay", "Çıldır", "Posof", "Göle", "Hanak", "Damal", "Aralık",
-    "Dilucu", "Türkgözü", "Aktaş Sınır Kapısı", "Aktaş", "Alican", "Gürbulak",
-    "Nahçıvan", "hudut hattı", "hudut", "sınır kapısı", "sınır hattı",
-    "Doğu Anadolu", "Kafkas", "Ermenistan sınırı", "Gürcistan sınırı",
-]
-
-ACTOR_HINTS = [
-    "AFAD", "AKUT", "Kızılay", "Valilik", "Vali", "Kaymakamlık", "Kaymakam",
-    "Belediye", "Büyükşehir", "İl Özel İdaresi", "TSK", "MSB", "Milli Savunma Bakanlığı",
-    "Kara Kuvvetleri", "Jandarma", "Jandarma Genel Komutanlığı", "Emniyet",
-    "polis", "Sahil Güvenlik", "hudut birlikleri", "hudut karakolu",
-    "Bakanlık", "Bakan", "Cumhurbaşkanı", "Genelkurmay", "PKK", "terör örgütü",
-    "Meteoroloji", "Meteoroloji Genel Müdürlüğü", "DSİ", "Karayolları",
-    "Kafkas Üniversitesi", "İçişleri Bakanlığı", "Sağlık Bakanlığı", "MİT",
-    "gümrük", "Ticaret Bakanlığı", "TCDD", "DHMİ",
-]
-
-CAUSE_MARKERS = [
-    "nedeniyle", "dolayısıyla", "sebebiyle", "yüzünden", "dolayı", "kaynaklı",
-    "amacıyla", "gerekçesiyle", "sonucu ortaya", "bağlı olarak",
-]
-
-MANNER_MARKERS = [
-    "tarafından", "sonucunda", "neticesinde", "operasyonla", "operasyon düzenlen",
-    "çalışma başlat", "ekipler", "sevk edil", "müdahale", "tahliye edil",
-    "kurtarıl", "gözaltına al", "düzenlenen", "yürütülen",
-]
-
-
-def _find_hints(haystack: str, hints):
-    low = haystack.lower()
-    found = []
-    for h in hints:
-        pos = low.find(h.lower())
-        if pos != -1:
-            found.append((pos, h))
-    found.sort(key=lambda x: x[0])
-    seen, out = set(), []
-    for _, h in found:
-        key = h.lower()
-        if key not in seen:
-            seen.add(key)
-            out.append(h)
-    # başka bir eşleşmenin alt dizesi olanları ele (Kaymakam ⊂ Kaymakamlık)
-    return [h for h in out if not any(h.lower() in o.lower() and h.lower() != o.lower() for o in out)]
-
-
-def _first_sentence_with(sentences, markers, skip=""):
-    skip_n = re.sub(r"\s+", " ", skip).strip().lower().rstrip(".")
-    for s in sentences:
-        low = s.lower()
-        if re.sub(r"\s+", " ", low).strip().rstrip(".") == skip_n:
-            continue
-        if any(m in low for m in markers):
-            return re.sub(r"\s+", " ", s).strip()[:240]
-    return ""
-
-
-def compose_5n1k(text: str, title: str = "", published: str = "") -> dict:
-    """Haber metninden tek paragraflık bir 5N1K özet taslağı üretir ve
-    ayrıca analiste yardımcı olacak 'ipucu' alanlarını çıkarır. Rapora
-    yalnızca 'ozet' paragrafı girer; ipuçları ekranda gösterilir."""
-    body = (text or "").strip()
-    # trafilatura bazen H1 başlığı gövdenin ilk satırı olarak veriyor — tekrarı at
-    norm = lambda s: re.sub(r"\s+", " ", s).strip().lower().rstrip(".")
-    body_lines = body.split("\n")
-    if body_lines and title and norm(body_lines[0]) == norm(title):
-        body = "\n".join(body_lines[1:]).strip()
-
-    full = f"{title}. {body}".strip()
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", full) if len(s.strip()) > 15]
-
-    ozet = summarize_text(body, title=title, max_sentences=3) if body else ""
-    ozet = re.sub(r"\s+", " ", ozet).strip()
-    if not ozet:
-        ozet = title.strip()
-
-    return {
-        "ozet": ozet,
-        "ipucu": {
-            "kim": ", ".join(_find_hints(full, ACTOR_HINTS)),
-            "nerede": ", ".join(_find_hints(full, PLACE_HINTS)),
-            "ne_zaman": published,
-            "neden": _first_sentence_with(sentences, CAUSE_MARKERS, skip=title),
-            "nasil": _first_sentence_with(sentences, MANNER_MARKERS, skip=title),
-        },
-    }
+    top = sorted(scored, key=lambda x: x[0], reverse=True)[:max_sentences]
+    top.sort(key=lambda x: x[1])
+    return " ".join(s for _, _, s in top)
 
 
 @app.route("/")
@@ -455,109 +267,6 @@ def kbi():
         generated_at=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
         active="kbi",
     )
-
-
-@app.route("/rapor")
-def rapor():
-    """Rapor hazırlama ekranı: kapsanan dönemdeki haberleri kategori kategori
-    listeler; analist haberleri seçip 5N1K özetini girer."""
-    start, end = report_mod.report_period()
-
-    def run(category):
-        try:
-            raw = search_raw(category["query"], hours=None, limit=None)
-            news = report_mod.filter_window(raw, start, end)
-            error = None
-        except Exception:
-            news = []
-            error = "Kaynağa ulaşılamadı"
-        return {**category, "news": news, "error": error}
-
-    with ThreadPoolExecutor(max_workers=len(KBI_CATEGORIES)) as pool:
-        modules = list(pool.map(run, KBI_CATEGORIES))
-
-    # tüm haberlere rapor genelinde tekil indeks ver
-    rows = []
-    for m in modules:
-        for n in m["news"]:
-            rows.append({
-                "idx": len(rows),
-                "category": m["title"],
-                "title": n["title"],
-                "source": n["source"],
-                "link": n["link"],
-                "published": n["published"],
-            })
-
-    return render_template(
-        "rapor.html",
-        city=CITY,
-        modules=modules,
-        rows=rows,
-        period_start=report_mod._fmt(start),
-        period_end=report_mod._fmt(end),
-        generated_at=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-        active="rapor",
-    )
-
-
-@app.route("/rapor/olustur", methods=["POST"])
-def rapor_olustur():
-    """Seçilen haberleri ve 5N1K özetlerini alıp .docx üretir."""
-    f = request.form
-    selected = []
-    for idx in f.getlist("sel"):
-        p = f.get(f"published_{idx}", "").strip()
-        try:
-            sort_key = datetime.strptime(p, "%d.%m.%Y %H:%M")
-        except ValueError:
-            sort_key = datetime.min
-        selected.append({
-            "category": f.get(f"category_{idx}", "").strip(),
-            "title": f.get(f"title_{idx}", "").strip(),
-            "source": f.get(f"source_{idx}", "").strip(),
-            "published": p,
-            "sort_key": sort_key,
-            "ozet": f.get(f"ozet_{idx}", "").strip(),
-        })
-
-    if not selected:
-        return "Rapora en az bir haber seçilmelidir.", 400
-
-    if not any(it["ozet"] for it in selected):
-        return "Seçilen haberler için 5N1K özeti girilmemiş.", 400
-
-    data = report_mod.build_report(selected, quick_keywords=QUICK_KEYWORDS)
-    return send_file(
-        io.BytesIO(data),
-        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        as_attachment=True,
-        download_name=report_mod.report_filename(),
-    )
-
-
-@app.route("/analiz")
-def analiz():
-    """Bir haberin kaynağını tarayıp 5N1K alanlarını otomatik doldurur."""
-    url = request.args.get("url", "").strip()
-    title = request.args.get("title", "").strip()
-    published = request.args.get("published", "").strip()
-    if not url and not title:
-        return jsonify({"error": "Haber bilgisi eksik."}), 400
-
-    text = ""
-    if url:
-        real_url = resolve_google_news_url(url)
-        try:
-            resp = requests.get(real_url, headers=HEADERS, timeout=8)
-            resp.raise_for_status()
-            text = extract_article_text(resp.text)
-        except requests.RequestException:
-            text = ""
-
-    result = compose_5n1k(text, title=title, published=published)
-    result["kaynak_tarandi"] = bool(text)
-    return jsonify(result)
 
 
 @app.route("/ozet")
