@@ -4,15 +4,9 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 2 --timeout 90
+    startCommand: gunicorn app:app --workers 2 --timeout 60
     envVars:
       - key: FLASK_DEBUG
         value: "0"
       - key: PYTHON_VERSION
         value: 3.11.9
-      # Temiz IP'li scraping proxy (Google, paylaşımlı bulut IP'lerinden
-      # haber çözümlemesini engelliyor). Örn. ScraperAPI proxy modu:
-      #   http://scraperapi:APIKEY@proxy-server.scraperapi.com:8001
-      # Render panelinden elle girilir; boşsa doğrudan bağlanılır.
-      - key: PROXY_URL
-        sync: false
