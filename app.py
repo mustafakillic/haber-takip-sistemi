@@ -160,76 +160,50 @@ _GOOGLE_BOILERPLATE = (
 )
 
 
-def _resolve_google_news(article_url: str) -> tuple[str, dict]:
-    """Google News RSS yönlendirme token'ını gerçek yayıncı URL'sine çevirir.
-    (url, teşhis) döner; url çözümlenemezse ''."""
-    dbg = {}
+def resolve_google_news_url(article_url: str) -> str:
+    """Google News RSS links are opaque redirect tokens; decode them to the
+    real publisher URL via Google's internal batchexecute endpoint.
+    Çözümlenemezse boş string döner (çağıran taraf kaynağı taramamalı)."""
     if "news.google.com" not in article_url:
-        return article_url, {"skip": "already-direct"}
+        return article_url
 
-    art_id = article_url.rstrip("/").split("/")[-1].split("?")[0]
-
-    # Yöntem A — sayfadaki gömülü JSON'dan (data-n-a-*) + batchexecute
     try:
         page = requests.get(
-            f"https://news.google.com/rss/articles/{art_id}",
-            headers=_GOOGLE_HEADERS, cookies=_GOOGLE_COOKIES, timeout=10,
+            article_url, headers=_GOOGLE_HEADERS, cookies=_GOOGLE_COOKIES, timeout=8
         )
-        dbg["A_get_status"] = page.status_code
-        dbg["A_len"] = len(page.text)
-        dbg["A_has_cwiz"] = "c-wiz" in page.text
-        dbg["A_consent"] = "consent.google.com" in page.url or "CONSENT" in page.text[:2000]
+        page.raise_for_status()
         soup = BeautifulSoup(page.text, "html.parser")
         div = soup.select_one("c-wiz > div[jscontroller]")
-        if div and div.get("data-n-a-id"):
-            sig, ts, b64 = div.get("data-n-a-sg"), div.get("data-n-a-ts"), div.get("data-n-a-id")
-            payload = [
-                "Fbv4je",
-                '["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,'
-                'null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,null,0,0,null,0],'
-                f'"{b64}",{ts},"{sig}"]',
-            ]
-            resp = requests.post(
-                "https://news.google.com/_/DotsSplashUi/data/batchexecute",
-                headers={**_GOOGLE_HEADERS, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
-                cookies=_GOOGLE_COOKIES, data={"f.req": json.dumps([[payload]])}, timeout=10,
-            )
-            dbg["A_post_status"] = resp.status_code
-            parsed = json.loads(resp.text.split("\n\n")[1])
-            real = json.loads(parsed[0][2])[1]
-            dbg["A_real"] = (real or "")[:120]
-            if real and "news.google.com" not in real:
-                return real, dbg
-        else:
-            dbg["A_div"] = "not-found"
-    except Exception as e:
-        dbg["A_err"] = f"{type(e).__name__}: {e}"[:200]
+        if not div:
+            return ""
 
-    # Yöntem B — RSS öğesinin kendi yönlendirmesini takip et
-    try:
-        r = requests.get(
-            f"https://news.google.com/articles/{art_id}",
-            headers={"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"},
-            timeout=10, allow_redirects=True,
+        signature = div.get("data-n-a-sg")
+        timestamp = div.get("data-n-a-ts")
+        base64_str = div.get("data-n-a-id")
+        if not (signature and timestamp and base64_str):
+            return ""
+
+        payload = [
+            "Fbv4je",
+            '["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,'
+            'null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,null,0,0,null,0],'
+            f'"{base64_str}",{timestamp},"{signature}"]',
+        ]
+        resp = requests.post(
+            "https://news.google.com/_/DotsSplashUi/data/batchexecute",
+            headers={**_GOOGLE_HEADERS, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
+            cookies=_GOOGLE_COOKIES,
+            data={"f.req": json.dumps([[payload]])},
+            timeout=8,
         )
-        dbg["B_status"] = r.status_code
-        dbg["B_final"] = r.url[:120]
-        if "news.google.com" not in r.url:
-            return r.url, dbg
-        m = re.search(r'data-n-au="([^"]+)"', r.text) or re.search(r'<c-wiz[^>]+data-p="[^"]*(https?[^"&]+)', r.text)
-        if m:
-            cand = m.group(1).replace("&amp;", "&")
-            dbg["B_meta"] = cand[:120]
-            if cand.startswith("http") and "news.google.com" not in cand:
-                return cand, dbg
-    except Exception as e:
-        dbg["B_err"] = f"{type(e).__name__}: {e}"[:200]
-
-    return "", dbg
-
-
-def resolve_google_news_url(article_url: str) -> str:
-    return _resolve_google_news(article_url)[0]
+        resp.raise_for_status()
+        parsed = json.loads(resp.text.split("\n\n")[1])
+        real_url = json.loads(parsed[0][2])[1]
+        if real_url and "news.google.com" not in real_url:
+            return real_url
+        return ""
+    except Exception:
+        return ""
 
 
 def _truncate_at_next_section(text: str) -> str:
@@ -583,27 +557,6 @@ def rapor_olustur():
         as_attachment=True,
         download_name=report_mod.report_filename(),
     )
-
-
-@app.route("/debug/resolve")
-def debug_resolve():
-    """Geçici teşhis: Render'ın Google News çözümlemesinde nerede takıldığını gösterir."""
-    url = request.args.get("url", "").strip()
-    if not url:
-        feed = _fetch_rss('"Kars"')
-        url = feed.entries[0].get("link", "") if feed.entries else ""
-    real, dbg = _resolve_google_news(url)
-    out = {"input": url[:120], "resolved": real[:200], "steps": dbg}
-    if real:
-        try:
-            resp = requests.get(real, headers=HEADERS, timeout=10)
-            txt = extract_article_text(resp.text)
-            out["fetch_status"] = resp.status_code
-            out["text_len"] = len(txt)
-            out["text_head"] = txt[:200]
-        except Exception as e:
-            out["fetch_err"] = f"{type(e).__name__}: {e}"[:200]
-    return jsonify(out)
 
 
 @app.route("/analiz")
