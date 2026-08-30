@@ -11,8 +11,8 @@
 | Alan | Bilgi |
 |---|---|
 | Rapor No | GHDR-2026/0830-01 |
-| Kapsanan Dönem | 29 AĞU 2026 – 08:00 / 30 AĞU 2026 – 07:30 |
-| Kapsam Kuralı | Bir önceki gün 08:00'dan rapor günü 07:30'a kadar açık kaynakta yayımlanan haberler |
+| Kapsanan Dönem | 29 AĞU 2026 – 08:00 / 30 AĞU 2026 – 14:20 *(bitiş = raporun oluşturulduğu an)* |
+| Kapsam Kuralı | Bir önceki gün 08:00'dan raporun oluşturulduğu ana kadar açık kaynakta yayımlanan haberler |
 | Hazırlama Zamanı | 30 AĞU 2026 – 07:35 |
 | Hazırlayan | Harekât Merkezi Amirliği |
 | Gizlilik Derecesi | HİZMETE ÖZEL |

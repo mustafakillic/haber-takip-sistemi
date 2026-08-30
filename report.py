@@ -5,7 +5,7 @@ Analist, tarama sonuçlarından haberleri seçer ve her biri için 5N1K
 yanıtlayan özeti girer; rapora yalnızca seçilen haberler ve bu paragraflar
 dökülür. Rapora bağlantı yazılmaz.
 
-Kapsam kuralı: bir önceki gün 08:00'dan rapor günü 07:30'a kadar
+Kapsam kuralı: bir önceki gün 08:00'dan raporun oluşturulduğu ana kadar
 yayımlanan haberler.
 """
 
@@ -25,13 +25,13 @@ _TR_MONTHS = [
 
 
 def report_period(now: datetime | None = None):
-    """(başlangıç, bitiş) döner. Bitiş = rapor günü 07:30 (veya rapor
-    07:30'dan önce alınıyorsa şu an). Başlangıç = bir önceki gün 08:00."""
+    """(başlangıç, bitiş) döner.
+    Bitiş = raporun oluşturulduğu an ("Rapor Oluştur"a basılan zaman).
+    Başlangıç = bir önceki takvim gününün saat 08:00'i.
+    Örn. 30 Ağustos 14:20'de basılırsa: 29 Ağustos 08:00 → 30 Ağustos 14:20."""
     now = now or datetime.now()
-    end = now.replace(hour=7, minute=30, second=0, microsecond=0)
-    if now < end:
-        end = now
-    start = end.replace(hour=8, minute=0, second=0, microsecond=0) - timedelta(days=1)
+    end = now.replace(second=0, microsecond=0)
+    start = (end - timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
     return start, end
 
 
@@ -122,7 +122,7 @@ def build_report(selected, now: datetime | None = None, quick_keywords=None) -> 
     _add_kv_table(doc, [
         ("Rapor No", _report_no(end)),
         ("Kapsanan Dönem", f"{_fmt(start)} / {_fmt(end)}"),
-        ("Kapsam Kuralı", "Bir önceki gün 08:00'dan rapor günü 07:30'a kadar açık kaynakta yayımlanan haberler"),
+        ("Kapsam Kuralı", "Bir önceki gün 08:00'dan raporun oluşturulduğu ana kadar açık kaynakta yayımlanan haberler"),
         ("Hazırlama Zamanı", _fmt(generated)),
         ("Hazırlayan", "Harekât Merkezi Amirliği"),
         ("Gizlilik Derecesi", CLASSIFICATION),

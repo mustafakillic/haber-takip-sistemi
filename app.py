@@ -1,9 +1,9 @@
+import calendar
 import io
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from time import mktime
 from urllib.parse import quote
 
 import feedparser
@@ -110,7 +110,9 @@ def search_raw(query: str, hours: int | None = None, limit: int | None = None):
             title, source = title.rsplit(" - ", 1)
 
         parsed = entry.get("published_parsed")
-        dt = datetime.fromtimestamp(mktime(parsed)) if parsed else None
+        # feedparser 'published_parsed' UTC'dir; calendar.timegm ile doğru
+        # POSIX zaman damgasına, sonra yerel saate (TRT) çevriliyor.
+        dt = datetime.fromtimestamp(calendar.timegm(parsed)) if parsed else None
 
         if hours is not None and (dt is None or now - dt > timedelta(hours=hours)):
             continue
