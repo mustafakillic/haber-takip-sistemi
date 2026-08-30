@@ -67,22 +67,32 @@ KBI_CATEGORIES = [
 
 
 _EMPTY_FEED = feedparser.parse(b"<rss><channel></channel></rss>")
+_RSS_CACHE: dict[str, tuple[float, object]] = {}
+_RSS_TTL = 600  # sn
 
 
 def _fetch_rss(query: str):
     """Google News RSS'i çeker. Google zaman zaman (özellikle bulut IP'lerine)
-    429/503 döndürüyor; bu durumda 500 vermek yerine bir kez daha dener,
-    yine olmazsa boş feed döner ve sayfa 'sonuç yok' olarak açılır."""
+    429/503 döndürüyor; o durumda 500 yerine boş feed döner ve sayfa
+    'sonuç yok' açılır. Sonuçlar 10 dk cache'lenir — ücretsiz dyno her
+    uyandığında 8 kategoriyi aynı anda yeniden çekip zaman aşımına uğramasın."""
+    now = time.time()
+    hit = _RSS_CACHE.get(query)
+    if hit and now - hit[0] < _RSS_TTL:
+        return hit[1]
+
     url = GOOGLE_NEWS_RSS.format(query=quote(query))
-    for attempt in range(2):
-        try:
-            response = requests.get(url, headers=HEADERS, timeout=12)
-            response.raise_for_status()
-            return feedparser.parse(response.content)
-        except requests.RequestException:
-            if attempt == 0:
-                time.sleep(1)
-    return _EMPTY_FEED
+    try:
+        response = requests.get(url, headers=HEADERS, timeout=8)
+        response.raise_for_status()
+        feed = feedparser.parse(response.content)
+        if feed.entries:
+            _RSS_CACHE[query] = (now, feed)
+        return feed
+    except requests.RequestException:
+        if hit:  # taze veri yoksa bayat da olsa eldekini ver
+            return hit[1]
+        return _EMPTY_FEED
 
 
 def search_raw(query: str, hours: int | None = None, limit: int | None = None):
