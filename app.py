@@ -617,6 +617,7 @@ def ozet():
 
 if __name__ == "__main__":
     import os
-    port = int(os.environ.get("PORT", 5050))
+    # 5050 makinede Docker tarafından tutuluyor; çakışmayan bir port seçildi.
+    port = int(os.environ.get("PORT", 5090))
     debug = os.environ.get("FLASK_DEBUG", "1") == "1"
-    app.run(host="0.0.0.0", port=port, debug=debug)
+    app.run(host="127.0.0.1", port=port, debug=debug)
