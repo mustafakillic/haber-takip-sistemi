@@ -207,7 +207,7 @@ def _resolve_google_news(article_url: str) -> tuple[str, dict]:
     try:
         page = http_get(
             f"https://news.google.com/rss/articles/{art_id}",
-            headers=_GOOGLE_HEADERS, cookies=_GOOGLE_COOKIES, timeout=15,
+            headers=_GOOGLE_HEADERS, cookies=_GOOGLE_COOKIES, timeout=10,
         )
         dbg["A_get_status"] = page.status_code
         dbg["A_len"] = len(page.text)
@@ -227,7 +227,7 @@ def _resolve_google_news(article_url: str) -> tuple[str, dict]:
                 "https://news.google.com/_/DotsSplashUi/data/batchexecute",
                 proxied=True,
                 headers={**_GOOGLE_HEADERS, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
-                cookies=_GOOGLE_COOKIES, data={"f.req": json.dumps([[payload]])}, timeout=20,
+                cookies=_GOOGLE_COOKIES, data={"f.req": json.dumps([[payload]])}, timeout=15,
             )
             dbg["A_post_status"] = resp.status_code
             parsed = json.loads(resp.text.split("\n\n")[1])
@@ -240,13 +240,16 @@ def _resolve_google_news(article_url: str) -> tuple[str, dict]:
     except Exception as e:
         dbg["A_err"] = f"{type(e).__name__}: {e}"[:200]
 
-    # Yöntem B — RSS öğesinin kendi yönlendirmesini takip et
+    # Yöntem B — yalnızca proxy varken dene (proxysiz her zaman /sorry duvarına
+    # çarpıp 20 sn boşa harcıyor)
+    if not _PROXIES:
+        return "", dbg
     try:
         r = http_get(
             f"https://news.google.com/articles/{art_id}",
             proxied=True,
             headers={"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"},
-            timeout=20, allow_redirects=True,
+            timeout=12, allow_redirects=True,
         )
         dbg["B_status"] = r.status_code
         dbg["B_final"] = r.url[:120]
@@ -346,7 +349,7 @@ def _fetch_article_text(real_url: str) -> str:
     for proxied in ((False, True) if _PROXIES else (False,)):
         try:
             resp = http_get(
-                real_url, proxied=proxied, headers=HEADERS, timeout=20, allow_redirects=True
+                real_url, proxied=proxied, headers=HEADERS, timeout=12, allow_redirects=True
             )
             resp.raise_for_status()
             txt = extract_article_text(resp.text)
