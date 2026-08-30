@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block subtitle %}Günlük Harekât Durum Raporu — haber seçimi ve 5N1K özet girişi{% endblock %}
+
+{% block content %}
+<style>
+  #raporForm { display: block; }
+  .rapor-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .rapor-bar .period { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.04em; }
+  .rapor-bar .period b { color: var(--accent); }
+  .cat-block { margin-bottom: 22px; }
+  .cat-title {
+    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #fff; border-left: 2px solid var(--accent-dim); padding-left: 8px;
+    margin-bottom: 8px; display: flex; gap: 8px; align-items: center;
+  }
+  .cat-title .n {
+    color: var(--accent); font-size: 0.68rem; border: 1px solid var(--accent-dim);
+    padding: 0 6px; border-radius: 10px;
+  }
+  .nrow {
+    border: 1px solid var(--border); border-radius: 4px;
+    background: var(--panel); margin-bottom: 8px; overflow: hidden;
+  }
+  .nrow-head {
+    display: grid; grid-template-columns: 24px 1fr auto; gap: 10px;
+    padding: 10px 12px; align-items: start; cursor: pointer;
+  }
+  .nrow-head input[type=checkbox] { margin-top: 3px; width: 15px; height: 15px; accent-color: var(--accent); }
+  .nrow-head .nt { color: #eef3f7; font-size: 0.86rem; line-height: 1.4; }
+  .nrow-head .nm { margin-top: 5px; font-size: 0.66rem; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+  .nrow-head .nm .src { color: var(--warn); }
+  .fivew { display: none; padding: 4px 12px 14px 46px; border-top: 1px dashed var(--border); }
+  .nrow.on .fivew { display: block; }
+  .nrow.on { border-color: var(--accent-dim); }
+  .fw-field { margin-top: 8px; }
+  .fw-field label {
+    display: block; font-size: 0.64rem; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted); margin-bottom: 3px;
+  }
+  .fw-field textarea {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 3px; color: var(--text); font-family: var(--mono);
+    font-size: 0.8rem; padding: 6px 8px; resize: vertical; min-height: 34px;
+  }
+  .fw-field textarea:focus { outline: none; border-color: var(--accent-dim); }
+  .fw-hint {
+    margin-top: 6px; font-size: 0.64rem; line-height: 1.5; color: var(--muted);
+  }
+  .fw-hint b { color: var(--warn); font-weight: 400; }
+  .fw-hint .miss { color: var(--danger); }
+  .fw-assist {
+    margin-top: 8px; font-size: 0.66rem; background: transparent;
+    color: var(--accent); border: 1px solid var(--accent-dim);
+    border-radius: 3px; padding: 3px 9px; cursor: pointer; text-transform: none;
+    letter-spacing: 0.02em; font-weight: 400;
+  }
+  .fw-assist:hover { background: rgba(61,220,132,0.12); }
+  .fw-assist[disabled] { opacity: 0.5; cursor: default; }
+  .submit-bar {
+    position: sticky; bottom: 0; background: var(--panel-2);
+    border: 1px solid var(--accent-dim); border-radius: 4px;
+    padding: 12px 16px; display: flex; justify-content: space-between;
+    align-items: center; margin-top: 20px;
+  }
+  .submit-bar .count { font-size: 0.74rem; color: var(--muted); }
+  .submit-bar .count b { color: var(--accent); }
+</style>
+
+<div class="rapor-bar">
+  <div class="period">KAPSANAN DÖNEM: <b>{{ period_start }}</b> &nbsp;/&nbsp; <b>{{ period_end }}</b></div>
+  <div class="period">{{ rows|length }} haber tarandı</div>
+</div>
+
+{% if not rows %}
+  <div class="empty">Kapsanan dönemde açık kaynakta haber tespit edilmedi.</div>
+{% else %}
+<form method="post" action="/rapor/olustur" id="raporForm">
+  {% for m in modules %}
+    {% set cat_rows = rows | selectattr('category', 'equalto', m.title) | list %}
+    {% if cat_rows or m.error %}
+    <div class="cat-block">
+      <div class="cat-title">{{ m.title }} <span class="n">{{ cat_rows|length }}</span></div>
+      {% if m.error %}
+        <div class="module-error">{{ m.error }}</div>
+      {% endif %}
+      {% for r in cat_rows %}
+      <div class="nrow" data-idx="{{ r.idx }}">
+        <div class="nrow-head" onclick="if(event.target.tagName!=='INPUT'){toggleRow(this)}">
+          <input type="checkbox" name="sel" value="{{ r.idx }}" onchange="onCheck(this)">
+          <div>
+            <div class="nt">{{ r.title }}</div>
+            <div class="nm">
+              <span class="src">{{ r.source }}</span>
+              <span>⏱ {{ r.published }}</span>
+            </div>
+          </div>
+          <button type="button" class="msum-btn"
+            onclick="event.stopPropagation(); autofill({{ r.idx }}, true)"
+            data-url="{{ r.link }}" data-title="{{ r.title }}">5N1K getir</button>
+        </div>
+        <div class="fivew">
+          <input type="hidden" name="category_{{ r.idx }}" value="{{ r.category }}">
+          <input type="hidden" name="title_{{ r.idx }}" value="{{ r.title }}">
+          <input type="hidden" name="source_{{ r.idx }}" value="{{ r.source }}">
+          <input type="hidden" name="published_{{ r.idx }}" value="{{ r.published }}">
+          <div class="fw-field">
+            <label>5N1K Özeti — Kim / Ne / Nerede / Ne zaman / Neden / Nasıl sorularını tek paragrafta yanıtlayın</label>
+            <textarea name="ozet_{{ r.idx }}" rows="4"></textarea>
+            <div class="fw-hint" data-idx="{{ r.idx }}">İpucu için “5N1K getir”e basın.</div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  <div class="submit-bar">
+    <div class="count"><b id="selCount">0</b> haber seçildi</div>
+    <button type="submit">Raporu Oluştur (.docx)</button>
+  </div>
+</form>
+{% endif %}
+
+<script>
+  function toggleRow(head) {
+    head.closest('.nrow').classList.toggle('on');
+  }
+  function onCheck(cb) {
+    const row = cb.closest('.nrow');
+    if (cb.checked) {
+      row.classList.add('on');
+      // seçilince 5N1K taslağını otomatik doldur (henüz doldurulmadıysa)
+      if (!row.dataset.filled) autofill(parseInt(row.dataset.idx, 10), false);
+    }
+    document.getElementById('selCount').textContent =
+      document.querySelectorAll('input[name=sel]:checked').length;
+  }
+
+  function ozetEl(row, idx) {
+    return row.querySelector('textarea[name=ozet_' + idx + ']');
+  }
+
+  function renderHint(row, idx, ipucu) {
+    const box = row.querySelector('.fw-hint[data-idx="' + idx + '"]');
+    if (!box) return;
+    const parts = [];
+    const lbl = { kim: 'Kim', nerede: 'Nerede', ne_zaman: 'Ne zaman', neden: 'Neden', nasil: 'Nasıl' };
+    ['kim', 'nerede', 'ne_zaman', 'neden', 'nasil'].forEach(function (k) {
+      const v = (ipucu && ipucu[k]) ? String(ipucu[k]).trim() : '';
+      if (v) parts.push('<b>' + lbl[k] + ':</b> ' + v);
+      else parts.push('<span class="miss">' + lbl[k] + ': ?</span>');
+    });
+    box.innerHTML = 'İpucu (rapora girmez) — ' + parts.join(' &nbsp;·&nbsp; ');
+  }
+
+  function autofill(idx, force) {
+    const row = document.querySelector('.nrow[data-idx="' + idx + '"]');
+    const btn = row.querySelector('.msum-btn');
+    const url = btn.dataset.url, title = btn.dataset.title;
+    row.classList.add('on');
+    const cb = row.querySelector('input[name=sel]');
+    if (!cb.checked) { cb.checked = true; onCheck(cb); }
+
+    const prev = btn.dataset.label || btn.textContent;
+    btn.dataset.label = prev;
+    btn.disabled = true; btn.textContent = 'taranıyor...';
+    const published = row.querySelector('input[name=published_' + idx + ']').value || '';
+
+    fetch('/analiz?url=' + encodeURIComponent(url) +
+          '&title=' + encodeURIComponent(title) +
+          '&published=' + encodeURIComponent(published))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { btn.textContent = 'hata'; return; }
+        const el = ozetEl(row, idx);
+        if (el && (force || !el.value.trim()) && d.ozet) el.value = d.ozet;
+        renderHint(row, idx, d.ipucu);
+        row.dataset.filled = '1';
+        btn.textContent = d.kaynak_tarandi ? '5N1K yenile' : 'yenile (kaynak açılamadı)';
+      })
+      .catch(function () { btn.textContent = 'servis hatası'; })
+      .finally(function () { btn.disabled = false; });
+  }
+</script>
+{% endblock %}
