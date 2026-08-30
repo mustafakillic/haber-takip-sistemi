@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from time import mktime
@@ -289,23 +290,42 @@ def ozet():
     if not url:
         return jsonify({"error": "URL eksik."}), 400
 
-    real_url = resolve_google_news_url(url)
-
     try:
-        response = requests.get(real_url, headers=HEADERS, timeout=8)
-        response.raise_for_status()
-    except requests.RequestException:
-        return jsonify({"error": "Kaynağa erişilemedi. Haberi doğrudan kaynağından görüntüleyin."}), 502
+        real_url = resolve_google_news_url(url)
+        try:
+            response = requests.get(real_url, headers=HEADERS, timeout=8)
+            response.raise_for_status()
+        except requests.RequestException:
+            return jsonify({"error": "Kaynağa erişilemedi. Haberi doğrudan kaynağından görüntüleyin."}), 502
 
-    text = extract_article_text(response.text)
-    if not text:
-        return jsonify({"error": "Bu kaynaktan özetlenebilir metin çıkarılamadı."}), 422
+        text = extract_article_text(response.text)
+        if not text:
+            return jsonify({"error": "Bu kaynaktan özetlenebilir metin çıkarılamadı."}), 422
 
-    summary = summarize_text(text, title=title)
-    if not summary:
-        return jsonify({"error": "Özet oluşturulamadı."}), 422
+        summary = summarize_text(text, title=title)
+        if not summary:
+            return jsonify({"error": "Özet oluşturulamadı."}), 422
 
-    return jsonify({"summary": summary, "final_url": response.url})
+        return jsonify({"summary": summary, "final_url": response.url})
+    except Exception:
+        traceback.print_exc()
+        return jsonify({"error": "Özet çıkarılırken beklenmeyen bir hata oluştu."}), 500
+
+
+@app.errorhandler(Exception)
+def _unhandled(e):
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e
+    traceback.print_exc()  # Render loglarına düşer
+    wants_json = request.path.startswith("/ozet")
+    if wants_json:
+        return jsonify({"error": "Beklenmeyen bir hata oluştu."}), 500
+    return (
+        "<h1>Geçici bir hata oluştu</h1><p>Kaynak (Google Haberler) şu an yanıt "
+        "vermiyor olabilir. Birkaç dakika sonra tekrar deneyin.</p>",
+        500,
+    )
 
 
 if __name__ == "__main__":
