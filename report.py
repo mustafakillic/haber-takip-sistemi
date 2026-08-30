@@ -44,7 +44,9 @@ def _report_no(end: datetime) -> str:
 
 
 def filter_window(items, start: datetime, end: datetime):
-    """search_raw() çıktısını kapsanan döneme göre süzer."""
+    """search_raw() çıktısını kapsanan döneme göre süzer.
+    Seçim ekranında en yeni haber üstte olacak şekilde yeniden eskiye sıralar
+    (rapordaki kronolojik döküm ayrıca eskiden yeniye sıralanır)."""
     out = []
     for it in items:
         dt = it.get("sort_key")
@@ -52,7 +54,7 @@ def filter_window(items, start: datetime, end: datetime):
             continue
         if start <= dt <= end:
             out.append(it)
-    out.sort(key=lambda r: r["sort_key"])
+    out.sort(key=lambda r: r["sort_key"], reverse=True)
     return out
 
 
