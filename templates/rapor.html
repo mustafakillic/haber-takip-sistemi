@@ -179,6 +179,10 @@
         const el = ozetEl(row, idx);
         if (el && (force || !el.value.trim()) && d.ozet) el.value = d.ozet;
         renderHint(row, idx, d.ipucu);
+        if (!d.kaynak_tarandi && d['not']) {
+          const box = row.querySelector('.fw-hint[data-idx="' + idx + '"]');
+          if (box) box.innerHTML = '<span class="miss">⚠ ' + d['not'] + '</span>';
+        }
         row.dataset.filled = '1';
         btn.textContent = d.kaynak_tarandi ? '5N1K yenile' : 'yenile (kaynak açılamadı)';
       })

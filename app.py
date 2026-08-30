@@ -146,25 +146,42 @@ TURKISH_STOPWORDS = {
 }
 
 
+# Datacenter IP'lerinde (Render vb.) Google, önce çerez onay sayfasına
+# yönlendiriyor; bu çerezler onay ekranını atlatır.
+_GOOGLE_COOKIES = {"CONSENT": "YES+cb", "SOCS": "CAI"}
+_GOOGLE_HEADERS = {**HEADERS, "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.6"}
+
+# Kaynak çözümlenemediğinde Google News'in kendi genel açıklaması metin
+# sanılıp özete giriyordu — bu kalıpları "içerik yok" say.
+_GOOGLE_BOILERPLATE = (
+    "aggregated from sources all over the world by google news",
+    "comprehensive up-to-date news coverage",
+    "google haberler",
+)
+
+
 def resolve_google_news_url(article_url: str) -> str:
     """Google News RSS links are opaque redirect tokens; decode them to the
-    real publisher URL via Google's internal batchexecute endpoint."""
+    real publisher URL via Google's internal batchexecute endpoint.
+    Çözümlenemezse boş string döner (çağıran taraf kaynağı taramamalı)."""
     if "news.google.com" not in article_url:
         return article_url
 
     try:
-        page = requests.get(article_url, headers=HEADERS, timeout=8)
+        page = requests.get(
+            article_url, headers=_GOOGLE_HEADERS, cookies=_GOOGLE_COOKIES, timeout=8
+        )
         page.raise_for_status()
         soup = BeautifulSoup(page.text, "html.parser")
         div = soup.select_one("c-wiz > div[jscontroller]")
         if not div:
-            return article_url
+            return ""
 
         signature = div.get("data-n-a-sg")
         timestamp = div.get("data-n-a-ts")
         base64_str = div.get("data-n-a-id")
         if not (signature and timestamp and base64_str):
-            return article_url
+            return ""
 
         payload = [
             "Fbv4je",
@@ -174,16 +191,19 @@ def resolve_google_news_url(article_url: str) -> str:
         ]
         resp = requests.post(
             "https://news.google.com/_/DotsSplashUi/data/batchexecute",
-            headers={**HEADERS, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
+            headers={**_GOOGLE_HEADERS, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
+            cookies=_GOOGLE_COOKIES,
             data={"f.req": json.dumps([[payload]])},
             timeout=8,
         )
         resp.raise_for_status()
         parsed = json.loads(resp.text.split("\n\n")[1])
         real_url = json.loads(parsed[0][2])[1]
-        return real_url or article_url
+        if real_url and "news.google.com" not in real_url:
+            return real_url
+        return ""
     except Exception:
-        return article_url
+        return ""
 
 
 def _truncate_at_next_section(text: str) -> str:
@@ -273,6 +293,9 @@ def extract_article_text(html: str) -> str:
             fallback = meta["content"].strip()
             if len(fallback) > len(text):
                 text = fallback
+
+    if any(b in text.lower() for b in _GOOGLE_BOILERPLATE):
+        return ""  # Google News kabuğu geldi — kaynak açılamadı say
 
     return text[:20000]
 
@@ -546,10 +569,10 @@ def analiz():
         return jsonify({"error": "Haber bilgisi eksik."}), 400
 
     text = ""
-    if url:
-        real_url = resolve_google_news_url(url)
+    real_url = resolve_google_news_url(url) if url else ""
+    if real_url:
         try:
-            resp = requests.get(real_url, headers=HEADERS, timeout=8)
+            resp = requests.get(real_url, headers=HEADERS, timeout=10, allow_redirects=True)
             resp.raise_for_status()
             text = extract_article_text(resp.text)
         except requests.RequestException:
@@ -557,6 +580,8 @@ def analiz():
 
     result = compose_5n1k(text, title=title, published=published)
     result["kaynak_tarandi"] = bool(text)
+    if not text:
+        result["not"] = "Kaynak metnine ulaşılamadı; özet haber başlığından üretildi, lütfen elle tamamlayın."
     return jsonify(result)
 
 
@@ -568,9 +593,11 @@ def ozet():
         return jsonify({"error": "URL eksik."}), 400
 
     real_url = resolve_google_news_url(url)
+    if not real_url:
+        return jsonify({"error": "Haberin asıl kaynağı çözümlenemedi. Haberi doğrudan kaynağından görüntüleyin."}), 502
 
     try:
-        response = requests.get(real_url, headers=HEADERS, timeout=8)
+        response = requests.get(real_url, headers=HEADERS, timeout=10, allow_redirects=True)
         response.raise_for_status()
     except requests.RequestException:
         return jsonify({"error": "Kaynağa erişilemedi. Haberi doğrudan kaynağından görüntüleyin."}), 502
