@@ -1,8 +1,6 @@
 import io
 import json
-import os
 import re
-import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from time import mktime
@@ -21,36 +19,6 @@ app = Flask(__name__)
 CITY = "Kars"
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=tr&gl=TR&ceid=TR:tr"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; HaberTakipSistemi/1.0)"}
-
-# --- Proxy (paylaşımlı bulut IP'lerinde Google/haber sitesi engelini aşmak için) ---
-# PROXY_URL ör.: http://scraperapi:APIKEY@proxy-server.scraperapi.com:8001
-# Boşsa doğrudan bağlanılır (localde gerek yok).
-PROXY_URL = os.environ.get("PROXY_URL", "").strip()
-_PROXIES = {"http": PROXY_URL, "https": PROXY_URL} if PROXY_URL else None
-
-
-def http_get(url, *, proxied=False, **kw):
-    """requests.get sarmalayıcısı. proxied=True ve PROXY_URL tanımlıysa
-    istek temiz IP'li proxy üzerinden gider (proxy TLS'i MITM ettiği için
-    verify kapatılır — yalnızca herkese açık sayfalar çekilir)."""
-    if proxied and _PROXIES:
-        kw.setdefault("proxies", _PROXIES)
-        kw.setdefault("verify", False)
-    return requests.get(url, **kw)
-
-
-def http_post(url, *, proxied=False, **kw):
-    if proxied and _PROXIES:
-        kw.setdefault("proxies", _PROXIES)
-        kw.setdefault("verify", False)
-    return requests.post(url, **kw)
-
-
-warnings.filterwarnings("ignore", message="Unverified HTTPS request")
-try:
-    requests.packages.urllib3.disable_warnings()  # proxy MITM'de verify=False gürültüsü
-except Exception:
-    pass
 
 QUICK_KEYWORDS = ["nükleer", "sınır", "tatbikat", "deprem", "hudut", "PKK"]
 
@@ -202,12 +170,10 @@ def _resolve_google_news(article_url: str) -> tuple[str, dict]:
     art_id = article_url.rstrip("/").split("/")[-1].split("?")[0]
 
     # Yöntem A — sayfadaki gömülü JSON'dan (data-n-a-*) + batchexecute
-    # İlk GET Render'dan doğrudan çalışıyor; sadece batchexecute POST engelli,
-    # o yüzden proxy kredisini yalnızca POST'ta harcarız.
     try:
-        page = http_get(
+        page = requests.get(
             f"https://news.google.com/rss/articles/{art_id}",
-            headers=_GOOGLE_HEADERS, cookies=_GOOGLE_COOKIES, timeout=15,
+            headers=_GOOGLE_HEADERS, cookies=_GOOGLE_COOKIES, timeout=10,
         )
         dbg["A_get_status"] = page.status_code
         dbg["A_len"] = len(page.text)
@@ -223,11 +189,10 @@ def _resolve_google_news(article_url: str) -> tuple[str, dict]:
                 'null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,null,0,0,null,0],'
                 f'"{b64}",{ts},"{sig}"]',
             ]
-            resp = http_post(
+            resp = requests.post(
                 "https://news.google.com/_/DotsSplashUi/data/batchexecute",
-                proxied=True,
                 headers={**_GOOGLE_HEADERS, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
-                cookies=_GOOGLE_COOKIES, data={"f.req": json.dumps([[payload]])}, timeout=20,
+                cookies=_GOOGLE_COOKIES, data={"f.req": json.dumps([[payload]])}, timeout=10,
             )
             dbg["A_post_status"] = resp.status_code
             parsed = json.loads(resp.text.split("\n\n")[1])
@@ -242,11 +207,10 @@ def _resolve_google_news(article_url: str) -> tuple[str, dict]:
 
     # Yöntem B — RSS öğesinin kendi yönlendirmesini takip et
     try:
-        r = http_get(
+        r = requests.get(
             f"https://news.google.com/articles/{art_id}",
-            proxied=True,
             headers={"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"},
-            timeout=20, allow_redirects=True,
+            timeout=10, allow_redirects=True,
         )
         dbg["B_status"] = r.status_code
         dbg["B_final"] = r.url[:120]
@@ -339,22 +303,6 @@ def _strip_article_noise(text: str) -> str:
         lines.pop()
 
     return "\n".join(lines).strip()
-
-
-def _fetch_article_text(real_url: str) -> str:
-    """Yayıncı sayfasını önce doğrudan, boş/başarısız gelirse proxy ile çeker."""
-    for proxied in ((False, True) if _PROXIES else (False,)):
-        try:
-            resp = http_get(
-                real_url, proxied=proxied, headers=HEADERS, timeout=20, allow_redirects=True
-            )
-            resp.raise_for_status()
-            txt = extract_article_text(resp.text)
-            if txt:
-                return txt
-        except requests.RequestException:
-            continue
-    return ""
 
 
 def extract_article_text(html: str) -> str:
@@ -646,11 +594,15 @@ def debug_resolve():
         url = feed.entries[0].get("link", "") if feed.entries else ""
     real, dbg = _resolve_google_news(url)
     out = {"input": url[:120], "resolved": real[:200], "steps": dbg}
-    out["proxy_configured"] = bool(_PROXIES)
     if real:
-        txt = _fetch_article_text(real)
-        out["text_len"] = len(txt)
-        out["text_head"] = txt[:200]
+        try:
+            resp = requests.get(real, headers=HEADERS, timeout=10)
+            txt = extract_article_text(resp.text)
+            out["fetch_status"] = resp.status_code
+            out["text_len"] = len(txt)
+            out["text_head"] = txt[:200]
+        except Exception as e:
+            out["fetch_err"] = f"{type(e).__name__}: {e}"[:200]
     return jsonify(out)
 
 
@@ -666,7 +618,12 @@ def analiz():
     text = ""
     real_url = resolve_google_news_url(url) if url else ""
     if real_url:
-        text = _fetch_article_text(real_url)
+        try:
+            resp = requests.get(real_url, headers=HEADERS, timeout=10, allow_redirects=True)
+            resp.raise_for_status()
+            text = extract_article_text(resp.text)
+        except requests.RequestException:
+            text = ""
 
     result = compose_5n1k(text, title=title, published=published)
     result["kaynak_tarandi"] = bool(text)
@@ -686,7 +643,13 @@ def ozet():
     if not real_url:
         return jsonify({"error": "Haberin asıl kaynağı çözümlenemedi. Haberi doğrudan kaynağından görüntüleyin."}), 502
 
-    text = _fetch_article_text(real_url)
+    try:
+        response = requests.get(real_url, headers=HEADERS, timeout=10, allow_redirects=True)
+        response.raise_for_status()
+    except requests.RequestException:
+        return jsonify({"error": "Kaynağa erişilemedi. Haberi doğrudan kaynağından görüntüleyin."}), 502
+
+    text = extract_article_text(response.text)
     if not text:
         return jsonify({"error": "Bu kaynaktan özetlenebilir metin çıkarılamadı."}), 422
 
@@ -694,7 +657,7 @@ def ozet():
     if not summary:
         return jsonify({"error": "Özet oluşturulamadı."}), 422
 
-    return jsonify({"summary": summary, "final_url": real_url})
+    return jsonify({"summary": summary, "final_url": response.url})
 
 
 if __name__ == "__main__":
