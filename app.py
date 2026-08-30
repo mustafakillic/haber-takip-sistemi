@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from time import mktime
@@ -64,11 +65,23 @@ KBI_CATEGORIES = [
 ]
 
 
+_EMPTY_FEED = feedparser.parse(b"<rss><channel></channel></rss>")
+
+
 def _fetch_rss(query: str):
+    """Google News RSS'i çeker. Google zaman zaman (özellikle bulut IP'lerine)
+    429/503 döndürüyor; bu durumda 500 vermek yerine bir kez daha dener,
+    yine olmazsa boş feed döner ve sayfa 'sonuç yok' olarak açılır."""
     url = GOOGLE_NEWS_RSS.format(query=quote(query))
-    response = requests.get(url, headers=HEADERS, timeout=10)
-    response.raise_for_status()
-    return feedparser.parse(response.content)
+    for attempt in range(2):
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=12)
+            response.raise_for_status()
+            return feedparser.parse(response.content)
+        except requests.RequestException:
+            if attempt == 0:
+                time.sleep(1)
+    return _EMPTY_FEED
 
 
 def search_raw(query: str, hours: int | None = None, limit: int | None = None):
