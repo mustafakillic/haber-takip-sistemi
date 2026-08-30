@@ -2,6 +2,7 @@ import io
 import json
 import os
 import re
+import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -123,15 +124,44 @@ KBI_CATEGORIES = [
 ]
 
 
+_RSS_CACHE: dict[str, tuple[float, object]] = {}
+_RSS_TTL = 600  # sn — aynı sorguyu 10 dk içinde tekrar çekme (proxy kredisi + hız)
+
+
 def _fetch_rss(query: str):
+    now = time.time()
+    hit = _RSS_CACHE.get(query)
+    if hit and now - hit[0] < _RSS_TTL:
+        return hit[1]
+
     url = GOOGLE_NEWS_RSS.format(query=quote(query))
-    response = requests.get(url, headers=HEADERS, timeout=10)
-    response.raise_for_status()
-    return feedparser.parse(response.content)
+    last_exc = None
+    for attempt in range(2):
+        try:
+            # PROXY_URL tanımlıysa RSS de temiz IP'den gider (Google bulut
+            # IP'lerine 503/429 döndürüyor).
+            response = http_get(url, proxied=True, headers=HEADERS, timeout=15)
+            response.raise_for_status()
+            feed = feedparser.parse(response.content)
+            if feed.entries or not last_exc:
+                _RSS_CACHE[query] = (now, feed)
+                return feed
+        except requests.RequestException as e:
+            last_exc = e
+            time.sleep(1.5)
+
+    if hit:  # taze veri gelmediyse bayat da olsa eldekini ver
+        return hit[1]
+    if last_exc:
+        raise last_exc
+    return feedparser.parse(b"")
 
 
 def search_raw(query: str, hours: int | None = None, limit: int | None = None):
-    feed = _fetch_rss(query)
+    try:
+        feed = _fetch_rss(query)
+    except requests.RequestException:
+        return []
     now = datetime.now()
 
     results = []
