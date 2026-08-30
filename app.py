@@ -643,17 +643,23 @@ def rapor_olustur():
 @app.route("/debug/resolve")
 def debug_resolve():
     """Geçici teşhis: Render'ın Google News çözümlemesinde nerede takıldığını gösterir."""
-    url = request.args.get("url", "").strip()
-    if not url:
-        feed = _fetch_rss('"Kars"')
-        url = feed.entries[0].get("link", "") if feed.entries else ""
-    real, dbg = _resolve_google_news(url)
-    out = {"input": url[:120], "resolved": real[:200], "steps": dbg}
-    out["proxy_configured"] = bool(_PROXIES)
-    if real:
-        txt = _fetch_article_text(real)
-        out["text_len"] = len(txt)
-        out["text_head"] = txt[:200]
+    import traceback
+    out = {"proxy_configured": bool(_PROXIES)}
+    try:
+        url = request.args.get("url", "").strip()
+        if not url:
+            feed = _fetch_rss('"Kars"')
+            url = feed.entries[0].get("link", "") if feed.entries else ""
+        out["input"] = url[:120]
+        real, dbg = _resolve_google_news(url)
+        out["resolved"] = real[:200]
+        out["steps"] = dbg
+        if real:
+            txt = _fetch_article_text(real)
+            out["text_len"] = len(txt)
+            out["text_head"] = txt[:200]
+    except Exception:
+        out["trace"] = traceback.format_exc()[-1500:]
     return jsonify(out)
 
 
