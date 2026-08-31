@@ -103,6 +103,17 @@
   .km-ring { display: none; stroke: var(--danger); stroke-width: 1.6; }
   svg[data-r] .km-node.on .km-ring { display: block; animation: kmp 1.6s ease-in-out infinite; }
   @keyframes kmp { 0%,100% { opacity: .85 } 50% { opacity: .2 } }
+  .km-diamond { fill: var(--warn); stroke: var(--panel-2); stroke-width: 1; }
+  .km-cross text { fill: transparent; font-size: 8px; font-family: var(--mono); }
+  svg[data-r] .km-node.on.km-cross .km-diamond { fill: var(--danger); }
+  svg[data-r] .km-node.on.km-cross text { fill: var(--danger); font-weight: 700; }
+
+  .loc-sel {
+    margin-top: 8px; width: 100%; font-family: var(--mono); font-size: 0.68rem;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 3px; padding: 4px 6px;
+  }
+  .loc-sel:focus { outline: none; border-color: var(--accent-dim); }
 </style>
 
 <div class="rapor-bar">
@@ -150,7 +161,14 @@
               <textarea name="ozet_{{ r.idx }}" rows="4"></textarea>
               <div class="fw-hint" data-idx="{{ r.idx }}">İpucu için “5N1K getir”e basın.</div>
             </div>
-            <div class="mini-map" data-idx="{{ r.idx }}" data-region="{{ r.region }}"></div>
+            <div>
+              <div class="mini-map" data-idx="{{ r.idx }}" data-region="{{ r.region }}"></div>
+              <select class="loc-sel" data-idx="{{ r.idx }}" onchange="onLocSel(this)" title="Konumu elle düzelt">
+                {% for rc in region_choices %}
+                <option value="{{ rc }}" {{ 'selected' if rc == r.region else '' }}>{{ region_labels[rc] }}</option>
+                {% endfor %}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -178,6 +196,7 @@
     igdir:[206,199,0,'IĞDIR'], ermenistan:[252,118,-90,'ERMENİSTAN'],
     nahcivan:[225,183,0,'NAHÇIVAN'], gurcistan:[30,14,0,'GÜRCİSTAN']
   };
+  var KM_CROSS = { dogukapi:[231,92,'Doğukapı'], margara:[196,180,'Margara'] };
   function karsMapSVG() {
     var s = '<svg viewBox="0 0 260 210" xmlns="http://www.w3.org/2000/svg">';
     s += '<g class="km-node" id="km-kars_geneli"><path class="km-prov" d="M118 30 C150 26 192 36 222 60 C244 82 240 116 210 138 C196 172 160 188 128 186 C90 184 50 166 36 134 C24 110 34 90 58 82 C72 56 90 40 118 30 Z"/></g>';
@@ -193,6 +212,12 @@
          + '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.2"/>'
          + '<text x="' + p[0] + '" y="' + (p[1] - 6) + '" text-anchor="middle">' + p[2] + '</text></g>';
     }
+    for (var c in KM_CROSS) { var q = KM_CROSS[c];
+      s += '<g class="km-node km-cross" id="km-' + c + '">'
+         + '<path class="km-diamond" d="M' + q[0] + ' ' + (q[1]-4) + ' L' + (q[0]+4) + ' ' + q[1]
+         + ' L' + q[0] + ' ' + (q[1]+4) + ' L' + (q[0]-4) + ' ' + q[1] + ' Z"/>'
+         + '<text x="' + q[0] + '" y="' + (q[1]+13) + '" text-anchor="middle">' + q[2] + '</text></g>';
+    }
     s += '<text class="km-out" x="130" y="150" text-anchor="middle">KONUM: BÖLGE DIŞI</text>';
     return s + '</svg>';
   }
@@ -203,7 +228,9 @@
     svg.setAttribute('data-r', region);
     var t = svg.querySelector('#km-' + CSS.escape(region));
     if (t) t.classList.add('on');
-    if (region === 'ermenistan') { var b = svg.querySelector('#km-ermenistan_siniri'); if (b) b.classList.add('on'); }
+    if (['ermenistan','margara','dogukapi'].indexOf(region) !== -1) {
+      var b = svg.querySelector('#km-ermenistan_siniri'); if (b) b.classList.add('on');
+    }
     if (region === 'kars_geneli' || region === 'bolge_disi') { var pv = svg.querySelector('#km-kars_geneli'); if (pv) pv.classList.add('on'); }
     var cap = holder.querySelector('.cap');
     if (cap) { cap.textContent = REGION_LABELS[region] || 'Kars geneli'; cap.classList.toggle('disi', region === 'bolge_disi'); }
@@ -228,8 +255,13 @@
       chip.textContent = '📍 ' + (REGION_LABELS[region] || 'Kars geneli');
       chip.classList.toggle('disi', region === 'bolge_disi');
     }
+    var sel = row.querySelector('.loc-sel');
+    if (sel && sel.value !== region) sel.value = region;
   }
 
+  function onLocSel(sel) {
+    setRegion(sel.closest('.nrow'), sel.value);
+  }
   function toggleRow(head) {
     var row = head.closest('.nrow');
     row.classList.toggle('on');

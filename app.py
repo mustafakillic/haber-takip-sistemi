@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from flask import Flask, jsonify, render_template, request, send_file
 
 import report as report_mod
+from karsmap import REGION_CHOICES, REGION_LABELS
 
 app = Flask(__name__)
 
@@ -444,8 +445,14 @@ def compose_5n1k(text: str, title: str = "", published: str = "") -> dict:
 
 
 # --- Haber konumunu Kars haritasındaki bir bölgeye eşle ---
-# Sıra önemli: özel yerler (ilçe/sınır) önce, genel "Kars" en son.
+# Sıra önemli: en özgül (sınır kapısı) önce, sonra ilçe/sınır, en son genel "Kars".
 _REGION_RULES = [
+    # sınır geçiş noktaları (nokta konum)
+    ("margara",           ["margara", "alican", "alacan", "aras köprüsü", "aras nehri sınır",
+                           "aras üzerindeki köprü"]),
+    ("dogukapi",          ["doğukapı", "dogukapi", "akhurik", "akhuryan", "ahuryan",
+                           "kars-gyumri demiryolu", "kars gümrü demiryolu", "kars-gümrü hattı"]),
+    # ilçeler
     ("digor",             ["digor"]),
     ("kagizman",          ["kağızman", "kagizman"]),
     ("sarikamis",         ["sarıkamış", "sarikamis"]),
@@ -455,25 +462,17 @@ _REGION_RULES = [
     ("arpacay",           ["arpaçay", "arpacay"]),
     ("merkez",            ["kars merkez", "merkez ilçe", "kars şehir merkez"]),
     ("ermenistan_siniri", ["ermenistan sınır", "ermenistan hudud", "kars sınır", "türkiye-ermenistan",
-                           "hudut hattı", "sınır hattı", "hudut karakol", "sıfır noktası",
-                           "mayınlı", "alican", "doğukapı", "akyaka sınır"]),
+                           "türkiye sınır", "hudut hattı", "sınır hattı", "hudut karakol",
+                           "sıfır noktası", "mayınlı", "akyaka sınır", "sınır kapısında"]),
     ("nahcivan",          ["nahçıvan", "nahcivan", "dilucu"]),
     ("gurcistan",         ["gürcistan", "türkgözü", "posof", "sarp sınır", "aktaş sınır"]),
-    ("ermenistan",        ["ermenistan", "gyumri", "gümrü", "erivan", "erevan"]),
+    ("ermenistan",        ["ermenistan", "gyumri", "gümrü", "erivan", "erevan", "mirzoyan"]),
     ("ardahan",           ["ardahan", "çıldır", "göle", "hanak", "damal"]),
     ("igdir",             ["ığdır", "iğdır", "aralık", "tuzluca", "gürbulak"]),
     ("agri",              ["ağrı", "diyadin", "doğubayazıt", "eleşkirt", "patnos", "tutak"]),
     ("erzurum",           ["erzurum", "horasan", "pasinler", "oltu", "şenkaya", "narman"]),
 ]
 
-REGION_LABELS = {
-    "merkez": "Kars (Merkez)", "sarikamis": "Sarıkamış", "kagizman": "Kağızman",
-    "digor": "Digor", "selim": "Selim", "susuz": "Susuz", "akyaka": "Akyaka",
-    "arpacay": "Arpaçay", "ermenistan_siniri": "Ermenistan sınır hattı",
-    "nahcivan": "Nahçıvan yönü", "gurcistan": "Gürcistan yönü", "ermenistan": "Ermenistan",
-    "ardahan": "Ardahan", "igdir": "Iğdır", "agri": "Ağrı", "erzurum": "Erzurum",
-    "kars_geneli": "Kars geneli", "bolge_disi": "Bölge dışı",
-}
 
 
 def detect_region(*texts) -> str:
@@ -569,6 +568,7 @@ def rapor():
         region_labels=REGION_LABELS,
         period_start=report_mod._fmt(start),
         period_end=report_mod._fmt(end),
+        region_choices=REGION_CHOICES,
         generated_at=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
         active="rapor",
     )

@@ -16,7 +16,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt
 
-from karsmap import region_map_png  # noqa: F401 (rapor haritası)
+from karsmap import REGION_LABELS, region_map_png
 
 CLASSIFICATION = "HİZMETE ÖZEL"
 
@@ -71,16 +71,6 @@ def _add_kv_table(doc, rows):
             for run in p.runs:
                 run.bold = True
     return table
-
-
-REGION_LABELS = {
-    "merkez": "Kars (Merkez)", "sarikamis": "Sarıkamış", "kagizman": "Kağızman",
-    "digor": "Digor", "selim": "Selim", "susuz": "Susuz", "akyaka": "Akyaka",
-    "arpacay": "Arpaçay", "ermenistan_siniri": "Ermenistan sınır hattı",
-    "nahcivan": "Nahçıvan yönü", "gurcistan": "Gürcistan yönü", "ermenistan": "Ermenistan",
-    "ardahan": "Ardahan", "igdir": "Iğdır", "agri": "Ağrı", "erzurum": "Erzurum",
-    "kars_geneli": "Kars geneli", "bolge_disi": "Bölge dışı",
-}
 
 
 def _strip_cell_borders(cell):

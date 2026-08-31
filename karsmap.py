@@ -13,6 +13,23 @@ from PIL import Image, ImageDraw, ImageFont
 S = 3
 W, H = 260 * S, 210 * S
 
+REGION_LABELS = {
+    "merkez": "Kars (Merkez)", "sarikamis": "Sarıkamış", "kagizman": "Kağızman",
+    "digor": "Digor", "selim": "Selim", "susuz": "Susuz", "akyaka": "Akyaka",
+    "arpacay": "Arpaçay", "ermenistan_siniri": "Ermenistan sınır hattı",
+    "margara": "Margara / Alican Geçiş Noktası", "dogukapi": "Doğukapı / Akhurik Hattı",
+    "nahcivan": "Nahçıvan yönü", "gurcistan": "Gürcistan yönü", "ermenistan": "Ermenistan",
+    "ardahan": "Ardahan", "igdir": "Iğdır", "agri": "Ağrı", "erzurum": "Erzurum",
+    "kars_geneli": "Kars geneli", "bolge_disi": "Bölge dışı",
+}
+
+# Analistin elle seçebileceği tüm konumlar (haritadaki sıraya yakın)
+REGION_CHOICES = [
+    "merkez", "sarikamis", "selim", "kagizman", "digor", "akyaka", "arpacay", "susuz",
+    "ermenistan_siniri", "margara", "dogukapi", "ermenistan", "nahcivan", "gurcistan",
+    "ardahan", "igdir", "agri", "erzurum", "kars_geneli", "bolge_disi",
+]
+
 BG = (23, 28, 34)
 PROV_FILL = (30, 37, 45)
 PROV_LINE = (42, 50, 60)
@@ -57,6 +74,12 @@ BORDER_LINE = [
     (118, 32), (150, 27), (185, 32), (215, 52), (230, 72), (235, 98),
     (228, 122), (210, 138), (202, 158), (180, 176),
 ]
+
+# Sınır geçiş noktaları (x, y, kısa etiket) — sınır hattı üzerinde
+CROSSINGS = {
+    "dogukapi": (231, 92, "Doğukapı"),
+    "margara": (198, 178, "Margara"),
+}
 
 
 def _font(px):
@@ -112,11 +135,21 @@ def region_map_png(region: str) -> bytes:
               width=3 if region == "kars_geneli" else 2)
 
     # sınır hattı
-    border_hi = region in ("ermenistan_siniri", "ermenistan")
+    border_hi = region in ("ermenistan_siniri", "ermenistan", "margara", "dogukapi")
     d.line([_sc(p) for p in BORDER_LINE],
            fill=HI if border_hi else BORDER,
            width=6 if border_hi else 3,
            joint="curve")
+
+    # sınır geçiş noktaları (eşkenar dörtgen işaret)
+    for cid, (x, y, txt) in CROSSINGS.items():
+        active = region == cid
+        cx, cy = _sc((x, y))
+        rr = (9 if active else 5) * S // 2
+        d.polygon([(cx, cy - rr), (cx + rr, cy), (cx, cy + rr), (cx - rr, cy)],
+                  fill=HI if active else WARN, outline=BG, width=2)
+        if active:
+            _text(d, (x, y + 12), txt, f_lbl, HI, anchor="mm")
 
     # komşular
     for rid, (x, y, txt, rot) in NEIGHBOURS.items():
@@ -148,6 +181,7 @@ def region_map_png(region: str) -> bytes:
 
 
 if __name__ == "__main__":
-    for r in ("kagizman", "ermenistan_siniri", "bolge_disi", "ardahan", "kars_geneli"):
+    for r in ("kagizman", "ermenistan_siniri", "margara", "dogukapi", "bolge_disi",
+              "ardahan", "kars_geneli"):
         open(f"/tmp/km_{r}.png", "wb").write(region_map_png(r))
         print("wrote", r)
