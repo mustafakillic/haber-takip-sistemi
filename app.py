@@ -585,13 +585,16 @@ def rapor_olustur():
             sort_key = datetime.strptime(p, "%d.%m.%Y %H:%M")
         except ValueError:
             sort_key = datetime.min
+        title = f.get(f"title_{idx}", "").strip()
+        region = f.get(f"region_{idx}", "").strip() or detect_region(title)
         selected.append({
             "category": f.get(f"category_{idx}", "").strip(),
-            "title": f.get(f"title_{idx}", "").strip(),
+            "title": title,
             "source": f.get(f"source_{idx}", "").strip(),
             "published": p,
             "sort_key": sort_key,
             "ozet": f.get(f"ozet_{idx}", "").strip(),
+            "region": region,
         })
 
     if not selected:

@@ -143,6 +143,7 @@
           <input type="hidden" name="title_{{ r.idx }}" value="{{ r.title }}">
           <input type="hidden" name="source_{{ r.idx }}" value="{{ r.source }}">
           <input type="hidden" name="published_{{ r.idx }}" value="{{ r.published }}">
+          <input type="hidden" name="region_{{ r.idx }}" value="{{ r.region }}">
           <div class="fivew-grid">
             <div class="fw-field">
               <label>5N1K Özeti — Kim / Ne / Nerede / Ne zaman / Neden / Nasıl sorularını tek paragrafta yanıtlayın</label>
@@ -215,6 +216,8 @@
   }
   function setRegion(row, region) {
     if (!region) return;
+    var hidden = row.querySelector('input[name^="region_"]');
+    if (hidden) hidden.value = region;
     var holder = row.querySelector('.mini-map');
     if (holder) {
       holder.dataset.region = region;

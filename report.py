@@ -14,7 +14,9 @@ from datetime import datetime, timedelta
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Pt
+from docx.shared import Cm, Pt
+
+from karsmap import region_map_png  # noqa: F401 (rapor haritası)
 
 CLASSIFICATION = "HİZMETE ÖZEL"
 
@@ -71,13 +73,52 @@ def _add_kv_table(doc, rows):
     return table
 
 
+REGION_LABELS = {
+    "merkez": "Kars (Merkez)", "sarikamis": "Sarıkamış", "kagizman": "Kağızman",
+    "digor": "Digor", "selim": "Selim", "susuz": "Susuz", "akyaka": "Akyaka",
+    "arpacay": "Arpaçay", "ermenistan_siniri": "Ermenistan sınır hattı",
+    "nahcivan": "Nahçıvan yönü", "gurcistan": "Gürcistan yönü", "ermenistan": "Ermenistan",
+    "ardahan": "Ardahan", "igdir": "Iğdır", "agri": "Ağrı", "erzurum": "Erzurum",
+    "kars_geneli": "Kars geneli", "bolge_disi": "Bölge dışı",
+}
+
+
+def _strip_cell_borders(cell):
+    from docx.oxml.ns import qn
+    tcPr = cell._tc.get_or_add_tcPr()
+    borders = tcPr.makeelement(qn("w:tcBorders"), {})
+    for edge in ("top", "left", "bottom", "right"):
+        borders.append(borders.makeelement(qn(f"w:{edge}"), {qn("w:val"): "nil"}))
+    tcPr.append(borders)
+
+
 def _news_block(doc, it, prefix=""):
-    """Bir haberi: kalın başlık satırı + tek paragraflık 5N1K özeti olarak yazar."""
-    head = doc.add_paragraph()
+    """Bir haberi 2 sütunlu (metin | konum haritası) çerçevesiz tablo olarak yazar."""
+    region = (it.get("region") or "kars_geneli")
+    table = doc.add_table(rows=1, cols=2)
+    table.autofit = False
+    left, right = table.rows[0].cells
+    left.width = Cm(11.5)
+    right.width = Cm(4.6)
+    _strip_cell_borders(left)
+    _strip_cell_borders(right)
+
+    head = left.paragraphs[0]
     head.add_run(f"{prefix}{it['title']} ").bold = True
     head.add_run(f"({it['source']} · {it['published']})").italic = True
     ozet = (it.get("ozet") or "").strip() or "[5N1K özeti girilmemiştir.]"
-    doc.add_paragraph(ozet)
+    left.add_paragraph(ozet)
+
+    rp = right.paragraphs[0]
+    rp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    rp.add_run().add_picture(io.BytesIO(region_map_png(region)), width=Cm(4.4))
+    cap = right.add_paragraph()
+    cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = cap.add_run("📍 " + REGION_LABELS.get(region, "Kars geneli"))
+    r.italic = True
+    r.font.size = Pt(8)
+
+    doc.add_paragraph()  # bloklar arası nefes payı
 
 
 def build_report(selected, now: datetime | None = None, quick_keywords=None) -> bytes:
