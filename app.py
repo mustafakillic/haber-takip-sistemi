@@ -439,7 +439,51 @@ def compose_5n1k(text: str, title: str = "", published: str = "") -> dict:
             "neden": _first_sentence_with(sentences, CAUSE_MARKERS, skip=title),
             "nasil": _first_sentence_with(sentences, MANNER_MARKERS, skip=title),
         },
+        "region": detect_region(title, text),
     }
+
+
+# --- Haber konumunu Kars haritasındaki bir bölgeye eşle ---
+# Sıra önemli: özel yerler (ilçe/sınır) önce, genel "Kars" en son.
+_REGION_RULES = [
+    ("digor",             ["digor"]),
+    ("kagizman",          ["kağızman", "kagizman"]),
+    ("sarikamis",         ["sarıkamış", "sarikamis"]),
+    ("selim",             ["selim"]),
+    ("susuz",             ["susuz"]),
+    ("akyaka",            ["akyaka"]),
+    ("arpacay",           ["arpaçay", "arpacay"]),
+    ("merkez",            ["kars merkez", "merkez ilçe", "kars şehir merkez"]),
+    ("ermenistan_siniri", ["ermenistan sınır", "ermenistan hudud", "kars sınır", "türkiye-ermenistan",
+                           "hudut hattı", "sınır hattı", "hudut karakol", "sıfır noktası",
+                           "mayınlı", "alican", "doğukapı", "akyaka sınır"]),
+    ("nahcivan",          ["nahçıvan", "nahcivan", "dilucu"]),
+    ("gurcistan",         ["gürcistan", "türkgözü", "posof", "sarp sınır", "aktaş sınır"]),
+    ("ermenistan",        ["ermenistan", "gyumri", "gümrü", "erivan", "erevan"]),
+    ("ardahan",           ["ardahan", "çıldır", "göle", "hanak", "damal"]),
+    ("igdir",             ["ığdır", "iğdır", "aralık", "tuzluca", "gürbulak"]),
+    ("agri",              ["ağrı", "diyadin", "doğubayazıt", "eleşkirt", "patnos", "tutak"]),
+    ("erzurum",           ["erzurum", "horasan", "pasinler", "oltu", "şenkaya", "narman"]),
+]
+
+REGION_LABELS = {
+    "merkez": "Kars (Merkez)", "sarikamis": "Sarıkamış", "kagizman": "Kağızman",
+    "digor": "Digor", "selim": "Selim", "susuz": "Susuz", "akyaka": "Akyaka",
+    "arpacay": "Arpaçay", "ermenistan_siniri": "Ermenistan sınır hattı",
+    "nahcivan": "Nahçıvan yönü", "gurcistan": "Gürcistan yönü", "ermenistan": "Ermenistan",
+    "ardahan": "Ardahan", "igdir": "Iğdır", "agri": "Ağrı", "erzurum": "Erzurum",
+    "kars_geneli": "Kars geneli", "bolge_disi": "Bölge dışı",
+}
+
+
+def detect_region(*texts) -> str:
+    blob = " ".join(t for t in texts if t).lower()
+    for rid, keys in _REGION_RULES:
+        if any(k in blob for k in keys):
+            return rid
+    if "kars" in blob:
+        return "kars_geneli"
+    return "bolge_disi"
 
 
 @app.route("/")
@@ -505,6 +549,7 @@ def rapor():
     rows = []
     for m in modules:
         for n in m["news"]:
+            region = detect_region(n["title"])
             rows.append({
                 "idx": len(rows),
                 "category": m["title"],
@@ -512,6 +557,8 @@ def rapor():
                 "source": n["source"],
                 "link": n["link"],
                 "published": n["published"],
+                "region": region,
+                "region_label": REGION_LABELS.get(region, "Kars geneli"),
             })
 
     return render_template(
@@ -519,6 +566,7 @@ def rapor():
         city=CITY,
         modules=modules,
         rows=rows,
+        region_labels=REGION_LABELS,
         period_start=report_mod._fmt(start),
         period_end=report_mod._fmt(end),
         generated_at=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),

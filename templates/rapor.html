@@ -67,6 +67,42 @@
   }
   .submit-bar .count { font-size: 0.74rem; color: var(--muted); }
   .submit-bar .count b { color: var(--accent); }
+
+  /* Konum etiketi (satır başında) + mini harita (açılınca) */
+  .loc {
+    color: var(--accent); border: 1px solid var(--accent-dim);
+    background: rgba(61,220,132,0.06); padding: 1px 7px; border-radius: 3px;
+  }
+  .loc.disi { color: var(--danger); border-color: #5a2f26; background: rgba(226,89,59,0.08); }
+  .fivew-grid { display: grid; grid-template-columns: 1fr 220px; gap: 14px; align-items: start; }
+  @media (max-width: 760px) { .fivew-grid { grid-template-columns: 1fr; } }
+  .mini-map {
+    border: 1px solid var(--border); border-radius: 4px; padding: 6px 6px 4px;
+    background: var(--panel-2);
+  }
+  .mini-map svg { width: 100%; height: auto; display: block; }
+  .mini-map .cap {
+    margin-top: 3px; font-size: 0.62rem; text-align: center; color: var(--accent);
+    letter-spacing: 0.03em;
+  }
+  .mini-map .cap.disi { color: var(--danger); }
+  .km-prov   { fill: rgba(61,220,132,0.05); stroke: var(--border); stroke-width: 1.3; }
+  .km-border { fill: none; stroke: #5b6673; stroke-width: 2; stroke-dasharray: 4 3; }
+  .km-dist circle { fill: #55606b; transition: .18s; }
+  .km-dist text, .km-nb text { fill: var(--muted); font-size: 8.5px; font-family: var(--mono); }
+  .km-nb rect { fill: none; stroke: none; }
+  .km-out { display: none; font-size: 10px; font-weight: 700; fill: var(--warn); }
+  svg[data-r] .km-node.on .km-prov { stroke: var(--danger); stroke-width: 2; fill: rgba(226,89,59,0.10); }
+  svg[data-r] .km-node.on.km-dist circle { fill: var(--danger); }
+  svg[data-r] .km-node.on.km-dist text { fill: #fff; font-weight: 700; }
+  svg[data-r] .km-node.on .km-border { stroke: var(--danger); stroke-width: 3.2; stroke-dasharray: none; }
+  svg[data-r] .km-node.on.km-nb text { fill: #fff; font-weight: 700; }
+  svg[data-r] .km-node.on.km-nb rect { fill: rgba(226,89,59,0.18); stroke: var(--danger); }
+  svg[data-r="bolge_disi"] .km-out { display: block; }
+  svg[data-r="bolge_disi"] .km-prov { opacity: .4; }
+  .km-ring { display: none; stroke: var(--danger); stroke-width: 1.6; }
+  svg[data-r] .km-node.on .km-ring { display: block; animation: kmp 1.6s ease-in-out infinite; }
+  @keyframes kmp { 0%,100% { opacity: .85 } 50% { opacity: .2 } }
 </style>
 
 <div class="rapor-bar">
@@ -95,6 +131,7 @@
             <div class="nm">
               <span class="src">{{ r.source }}</span>
               <span>⏱ {{ r.published }}</span>
+              <span class="loc {{ 'disi' if r.region == 'bolge_disi' else '' }}" data-idx="{{ r.idx }}">📍 {{ r.region_label }}</span>
             </div>
           </div>
           <button type="button" class="msum-btn"
@@ -106,10 +143,13 @@
           <input type="hidden" name="title_{{ r.idx }}" value="{{ r.title }}">
           <input type="hidden" name="source_{{ r.idx }}" value="{{ r.source }}">
           <input type="hidden" name="published_{{ r.idx }}" value="{{ r.published }}">
-          <div class="fw-field">
-            <label>5N1K Özeti — Kim / Ne / Nerede / Ne zaman / Neden / Nasıl sorularını tek paragrafta yanıtlayın</label>
-            <textarea name="ozet_{{ r.idx }}" rows="4"></textarea>
-            <div class="fw-hint" data-idx="{{ r.idx }}">İpucu için “5N1K getir”e basın.</div>
+          <div class="fivew-grid">
+            <div class="fw-field">
+              <label>5N1K Özeti — Kim / Ne / Nerede / Ne zaman / Neden / Nasıl sorularını tek paragrafta yanıtlayın</label>
+              <textarea name="ozet_{{ r.idx }}" rows="4"></textarea>
+              <div class="fw-hint" data-idx="{{ r.idx }}">İpucu için “5N1K getir”e basın.</div>
+            </div>
+            <div class="mini-map" data-idx="{{ r.idx }}" data-region="{{ r.region }}"></div>
           </div>
         </div>
       </div>
@@ -126,13 +166,77 @@
 {% endif %}
 
 <script>
+  var REGION_LABELS = {{ region_labels | tojson }};
+  var KM_DISTRICTS = {
+    merkez:[130,94,'Merkez'], sarikamis:[46,139,'Sarıkamış'], selim:[92,118,'Selim'],
+    kagizman:[135,171,'Kağızman'], digor:[181,132,'Digor'], akyaka:[215,70,'Akyaka'],
+    arpacay:[166,52,'Arpaçay'], susuz:[106,55,'Susuz']
+  };
+  var KM_NB = {
+    ardahan:[112,12,0,'ARDAHAN'], erzurum:[9,104,-90,'ERZURUM'], agri:[96,204,0,'AĞRI'],
+    igdir:[206,199,0,'IĞDIR'], ermenistan:[252,118,-90,'ERMENİSTAN'],
+    nahcivan:[225,183,0,'NAHÇIVAN'], gurcistan:[30,14,0,'GÜRCİSTAN']
+  };
+  function karsMapSVG() {
+    var s = '<svg viewBox="0 0 260 210" xmlns="http://www.w3.org/2000/svg">';
+    s += '<g class="km-node" id="km-kars_geneli"><path class="km-prov" d="M118 30 C150 26 192 36 222 60 C244 82 240 116 210 138 C196 172 160 188 128 186 C90 184 50 166 36 134 C24 110 34 90 58 82 C72 56 90 40 118 30 Z"/></g>';
+    s += '<g class="km-node" id="km-ermenistan_siniri"><path class="km-border" d="M118 30 C150 26 192 36 222 60 C244 82 240 116 210 138 C200 158 182 174 162 182"/></g>';
+    for (var k in KM_NB) { var n = KM_NB[k];
+      s += '<g class="km-node km-nb" id="km-' + k + '" transform="translate(' + n[0] + ',' + n[1] + ') rotate(' + n[2] + ')">'
+         + '<rect x="' + (-(n[3].length * 3 + 4)) + '" y="-7" width="' + (n[3].length * 6 + 8) + '" height="13" rx="2"/>'
+         + '<text text-anchor="middle" dominant-baseline="central">' + n[3] + '</text></g>';
+    }
+    for (var d in KM_DISTRICTS) { var p = KM_DISTRICTS[d];
+      s += '<g class="km-node km-dist" id="km-' + d + '">'
+         + '<circle class="km-ring" cx="' + p[0] + '" cy="' + p[1] + '" r="9" fill="none"/>'
+         + '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.2"/>'
+         + '<text x="' + p[0] + '" y="' + (p[1] - 6) + '" text-anchor="middle">' + p[2] + '</text></g>';
+    }
+    s += '<text class="km-out" x="130" y="150" text-anchor="middle">KONUM: BÖLGE DIŞI</text>';
+    return s + '</svg>';
+  }
+  function applyRegion(holder, region) {
+    var svg = holder.querySelector('svg'); if (!svg) return;
+    region = region || 'kars_geneli';
+    svg.querySelectorAll('.km-node.on').forEach(function (e) { e.classList.remove('on'); });
+    svg.setAttribute('data-r', region);
+    var t = svg.querySelector('#km-' + CSS.escape(region));
+    if (t) t.classList.add('on');
+    if (region === 'ermenistan') { var b = svg.querySelector('#km-ermenistan_siniri'); if (b) b.classList.add('on'); }
+    if (region === 'kars_geneli' || region === 'bolge_disi') { var pv = svg.querySelector('#km-kars_geneli'); if (pv) pv.classList.add('on'); }
+    var cap = holder.querySelector('.cap');
+    if (cap) { cap.textContent = REGION_LABELS[region] || 'Kars geneli'; cap.classList.toggle('disi', region === 'bolge_disi'); }
+  }
+  function buildMap(holder) {
+    if (!holder || holder.dataset.ready) return;
+    holder.innerHTML = karsMapSVG() + '<div class="cap"></div>';
+    holder.dataset.ready = '1';
+    applyRegion(holder, holder.dataset.region);
+  }
+  function setRegion(row, region) {
+    if (!region) return;
+    var holder = row.querySelector('.mini-map');
+    if (holder) {
+      holder.dataset.region = region;
+      if (holder.dataset.ready) applyRegion(holder, region); else buildMap(holder);
+    }
+    var chip = row.querySelector('.loc');
+    if (chip) {
+      chip.textContent = '📍 ' + (REGION_LABELS[region] || 'Kars geneli');
+      chip.classList.toggle('disi', region === 'bolge_disi');
+    }
+  }
+
   function toggleRow(head) {
-    head.closest('.nrow').classList.toggle('on');
+    var row = head.closest('.nrow');
+    row.classList.toggle('on');
+    if (row.classList.contains('on')) buildMap(row.querySelector('.mini-map'));
   }
   function onCheck(cb) {
     const row = cb.closest('.nrow');
     if (cb.checked) {
       row.classList.add('on');
+      buildMap(row.querySelector('.mini-map'));
       // seçilince 5N1K taslağını otomatik doldur (henüz doldurulmadıysa)
       if (!row.dataset.filled) autofill(parseInt(row.dataset.idx, 10), false);
     }
@@ -179,6 +283,7 @@
         const el = ozetEl(row, idx);
         if (el && (force || !el.value.trim()) && d.ozet) el.value = d.ozet;
         renderHint(row, idx, d.ipucu);
+        if (d.region) setRegion(row, d.region);
         if (!d.kaynak_tarandi && d['not']) {
           const box = row.querySelector('.fw-hint[data-idx="' + idx + '"]');
           if (box) box.innerHTML = '<span class="miss">⚠ ' + d['not'] + '</span>';
