@@ -2,6 +2,8 @@ import calendar
 import io
 import json
 import re
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from urllib.parse import quote
@@ -21,6 +23,31 @@ CITY = "Kars"
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=tr&gl=TR&ceid=TR:tr"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; HaberTakipSistemi/1.0)"}
 
+# Google News RSS, tek bir IP'den art arda gelen isteklere çoğu zaman
+# HTTP 200 + BOŞ feed döndürerek "yumuşak" hız sınırı uygular (hata değil).
+# Gerçek tarayıcı kimliği + çerez onayı, istekleri seri çalıştırma, tekrar
+# denemeler ve kısa süreli önbellek bu boş yanıtları büyük ölçüde giderir.
+_RSS_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+_rss_session = requests.Session()
+_rss_session.headers.update({
+    "User-Agent": _RSS_UA,
+    "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.5",
+    "Accept": "application/rss+xml,application/xml;q=0.9,*/*;q=0.8",
+})
+_rss_session.cookies.update({"CONSENT": "YES+cb", "SOCS": "CAI"})
+
+_rss_lock = threading.Lock()          # istekleri seri hale getir (paralel = daha çok throttle)
+_rss_last_call = [0.0]
+_RSS_MIN_GAP = 1.5                     # ardışık istekler arası minimum saniye
+
+_rss_cache: dict = {}                  # query -> (timestamp, [results]) ; taze yanıt boşsa son iyi sonucu koru
+_RSS_TTL = 1200                        # önbellek ömrü (sn) = 20 dk
+
+
+class RSSThrottled(Exception):
+    """Google boş feed döndürdü ve elde geçerli önbellek de yok."""
+
 QUICK_KEYWORDS = ["nükleer", "sınır", "tatbikat", "deprem", "hudut", "PKK"]
 
 # Kritik Bilgi İhtiyacı (KBİ) modülü — sabit sorgulu izleme kategorileri
@@ -29,7 +56,7 @@ KBI_CATEGORIES = [
         "key": "kars_gundem",
         "title": "Kars Gündem",
         "desc": "Son 24 saat içinde ile dair çıkan haberler",
-        "query": '"Kars"',
+        "query": 'Kars',
         "hours": 24,
         "limit": 10,
     },
@@ -37,7 +64,7 @@ KBI_CATEGORIES = [
         "key": "sinir_hatti",
         "title": "Sınır Kapısı / Hudut Hattı",
         "desc": "Kars ve çevresindeki sınır kapısı, hudut, geçiş haberleri",
-        "query": '"Kars" ("sınır kapısı" OR hudut OR sınır OR gümrük)',
+        "query": 'Kars (hudut OR sınır OR gümrük OR "sınır kapısı")',
         "hours": None,
         "limit": 8,
     },
@@ -93,16 +120,34 @@ KBI_CATEGORIES = [
 
 
 def _fetch_rss(query: str):
+    """Feed'i getir; boş dönerse birkaç kez tekrar dene. HTTP hatası
+    olmadan entries boş kalırsa entries'i boş olan feed'i döndürür."""
     url = GOOGLE_NEWS_RSS.format(query=quote(query))
-    response = requests.get(url, headers=HEADERS, timeout=10)
-    response.raise_for_status()
-    return feedparser.parse(response.content)
+    last_exc = None
+    feed = None
+    for attempt in range(3):
+        with _rss_lock:
+            gap = _RSS_MIN_GAP - (time.monotonic() - _rss_last_call[0])
+            if gap > 0:
+                time.sleep(gap)
+            try:
+                response = _rss_session.get(url, timeout=15)
+                response.raise_for_status()
+                feed = feedparser.parse(response.content)
+            except requests.RequestException as exc:
+                last_exc = exc
+                feed = None
+            finally:
+                _rss_last_call[0] = time.monotonic()
+        if feed is not None and feed.entries:
+            return feed
+        time.sleep(1.0 + attempt)
+    if last_exc is not None and feed is None:
+        raise last_exc
+    return feed
 
 
-def search_raw(query: str, hours: int | None = None, limit: int | None = None):
-    feed = _fetch_rss(query)
-    now = datetime.now()
-
+def _parse_entries(feed):
     results = []
     for entry in feed.entries:
         title = entry.get("title", "")
@@ -115,9 +160,6 @@ def search_raw(query: str, hours: int | None = None, limit: int | None = None):
         # POSIX zaman damgasına, sonra yerel saate (TRT) çevriliyor.
         dt = datetime.fromtimestamp(calendar.timegm(parsed)) if parsed else None
 
-        if hours is not None and (dt is None or now - dt > timedelta(hours=hours)):
-            continue
-
         results.append({
             "title": title,
             "source": source or "Bilinmeyen Kaynak",
@@ -127,11 +169,31 @@ def search_raw(query: str, hours: int | None = None, limit: int | None = None):
         })
 
     results.sort(key=lambda r: r["sort_key"], reverse=True)
+    return results
+
+
+def search_raw(query: str, hours: int | None = None, limit: int | None = None):
+    feed = _fetch_rss(query)
+    results = _parse_entries(feed) if feed is not None else []
+
+    if results:
+        _rss_cache[query] = (time.time(), results)
+    else:
+        cached = _rss_cache.get(query)
+        if not (cached and time.time() - cached[0] < _RSS_TTL):
+            raise RSSThrottled(query)
+        results = cached[1]
+
+    if hours is not None:
+        cutoff = datetime.now() - timedelta(hours=hours)
+        results = [r for r in results
+                   if r["sort_key"] != datetime.min and r["sort_key"] >= cutoff]
+
     return results[:limit] if limit else results
 
 
 def search_news(keyword: str):
-    query = f'"{CITY}" "{keyword}"' if keyword else f'"{CITY}"'
+    query = f"{CITY} {keyword}".strip() if keyword else CITY
     return search_raw(query)
 
 
@@ -489,13 +551,23 @@ def detect_region(*texts) -> str:
 def index():
     keyword = request.args.get("keyword", "").strip()
     searched = bool(keyword or request.args.get("searched"))
-    results = search_news(keyword) if searched else []
+    results = []
+    error = None
+    if searched:
+        try:
+            results = search_news(keyword)
+        except RSSThrottled:
+            error = ("Google News şu an sonuç döndürmüyor (geçici hız sınırı). "
+                     "Birkaç dakika sonra tekrar deneyin.")
+        except requests.RequestException:
+            error = "Haber kaynağına ulaşılamadı."
     return render_template(
         "index.html",
         city=CITY,
         keyword=keyword,
         results=results,
         searched=searched,
+        error=error,
         quick_keywords=QUICK_KEYWORDS,
         generated_at=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
         active="search",
@@ -508,6 +580,9 @@ def kbi():
         try:
             news = search_raw(category["query"], hours=category["hours"], limit=category["limit"])
             error = None
+        except RSSThrottled:
+            news = []
+            error = "Google News geçici olarak sonuç döndürmedi — birazdan tekrar deneyin"
         except Exception:
             news = []
             error = "Kaynağa ulaşılamadı"
@@ -536,6 +611,9 @@ def rapor():
             raw = search_raw(category["query"], hours=None, limit=None)
             news = report_mod.filter_window(raw, start, end)
             error = None
+        except RSSThrottled:
+            news = []
+            error = "Google News geçici olarak sonuç döndürmedi — birazdan tekrar deneyin"
         except Exception:
             news = []
             error = "Kaynağa ulaşılamadı"

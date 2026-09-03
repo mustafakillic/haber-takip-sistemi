@@ -22,7 +22,9 @@
       <span><span class="count">{{ results|length }}</span> kayıt bulundu</span>
     </div>
 
-    {% if results %}
+    {% if error %}
+      <div class="empty">{{ error }}</div>
+    {% elif results %}
       {% for item in results %}
         <div class="row">
           <div class="idx">{{ "%02d"|format(loop.index) }}</div>
