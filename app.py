@@ -69,8 +69,16 @@ KBI_CATEGORIES = [
         "limit": 8,
     },
     {
+        "key": "ermenistan_gundem",
+        "title": "Ermenistan Gündem",
+        "desc": "Son 24 saat içinde Ermenistan'a dair çıkan tüm haberler",
+        "query": 'Ermenistan',
+        "hours": 24,
+        "limit": 10,
+    },
+    {
         "key": "ermenistan",
-        "title": "Ermenistan",
+        "title": "Ermenistan / Türkiye-Sınır",
         "desc": "Ermenistan kaynaklı bölgesel/sınır gelişmeleri",
         "query": 'Ermenistan (Kars OR Türkiye OR sınır OR hudut)',
         "hours": None,
