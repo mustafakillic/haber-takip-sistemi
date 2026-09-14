@@ -27,7 +27,7 @@ KBI_CATEGORIES = [
         "key": "kars_gundem",
         "title": "Kars Gündem",
         "desc": "Son 24 saat içinde ile dair çıkan haberler",
-        "query": '"Kars"',
+        "query": 'Kars',
         "hours": 24,
         "limit": 10,
     },
@@ -35,13 +35,21 @@ KBI_CATEGORIES = [
         "key": "sinir_hatti",
         "title": "Sınır Kapısı / Hudut Hattı",
         "desc": "Kars ve çevresindeki sınır kapısı, hudut, geçiş haberleri",
-        "query": '"Kars" ("sınır kapısı" OR hudut OR sınır OR gümrük)',
+        "query": 'Kars (hudut OR sınır OR gümrük OR "sınır kapısı")',
         "hours": None,
         "limit": 8,
     },
     {
+        "key": "ermenistan_gundem",
+        "title": "Ermenistan Gündem",
+        "desc": "Son 24 saat içinde Ermenistan'a dair çıkan tüm haberler",
+        "query": 'Ermenistan',
+        "hours": 24,
+        "limit": 10,
+    },
+    {
         "key": "ermenistan",
-        "title": "Ermenistan",
+        "title": "Ermenistan / Türkiye-Sınır",
         "desc": "Ermenistan kaynaklı bölgesel/sınır gelişmeleri",
         "query": 'Ermenistan (Kars OR Türkiye OR sınır OR hudut)',
         "hours": None,
@@ -125,7 +133,7 @@ def search_raw(query: str, hours: int | None = None, limit: int | None = None):
 
 
 def search_news(keyword: str):
-    query = f'"{CITY}" "{keyword}"' if keyword else f'"{CITY}"'
+    query = f"{CITY} {keyword}".strip() if keyword else CITY
     return search_raw(query)
 
 
